@@ -33,10 +33,15 @@ const SAVED_TOKEN_STORAGE_KEY = 'schoolcloud.github.token.v1';
 // new credential so the change is usable straight away; the copy is dropped as
 // soon as the deployed config file changes.
 const SAVED_ADMIN_CREDENTIALS_KEY = 'schoolcloud.admin.credentials.v1';
+const LIBRARY_CACHE_STORAGE_KEY = 'schoolcloud.library.snapshot.v1';
+const LIBRARY_CACHE_VERSION = 1;
 const VALID_YEAR_LEVELS = new Set(YEAR_LEVELS.map(String));
 const MAX_DESCRIPTION_LENGTH = 3000;
 const MIN_PASSWORD_LENGTH = 8;
 const USERNAME_PATTERN = /^[A-Za-z0-9._@+-]{3,64}$/;
+const FETCH_RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const FETCH_RETRY_DELAYS_MS = [350, 900];
+const CRASH_NOTICE_THROTTLE_MS = 10_000;
 
 function parseRepoName(value, fallbackOwner, fallbackName) {
   const match = String(value || '').trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
@@ -222,6 +227,24 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function isRetryableHttpStatus(status) {
+  return FETCH_RETRYABLE_STATUSES.has(Number(status) || 0);
+}
+
+function normalizeCachedLibrarySnapshot(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  if (!Array.isArray(data.manifest)) return null;
+  const library = data.library && typeof data.library === 'object' && !Array.isArray(data.library) ? data.library : {};
+  const stats = data.stats && typeof data.stats === 'object' && !Array.isArray(data.stats) ? data.stats : null;
+  return {
+    version: Number(data.version) || 0,
+    savedAt: typeof data.savedAt === 'string' ? data.savedAt : '',
+    manifest: data.manifest,
+    library,
+    stats
+  };
+}
+
 function schoolCloud() {
   return {
     currentView: 'library',
@@ -240,6 +263,7 @@ function schoolCloud() {
     errors: { library: '', preview: '' },
     loading: { library: true, preview: false },
     usingCachedLibrary: false,
+    libraryCacheSavedAt: '',
     libraryItems: [],
     libraryMetadata: {},
     metadataEntries: 0,
@@ -317,7 +341,9 @@ function schoolCloud() {
     _counterReadInFlight: [],
     _counterReadAt: {},
     _loadSequence: 0,
+    _loadPromise: null,
     _initialized: false,
+    _lastCrashNoticeAt: 0,
     _dismissedIntegrityIssueIds: [],
     localDrafts: [],
     adminAccount: {
@@ -599,6 +625,8 @@ function schoolCloud() {
       window.addEventListener('online', () => { this.offline = false; this.loadLibrary(); });
       window.addEventListener('offline', () => { this.offline = true; });
       this.readSharedFilters();
+      const cachedLibrary = this.readCachedLibrarySnapshot();
+      if (cachedLibrary) this.applyLibrarySnapshot(cachedLibrary, { fromCache: true });
       this.refreshIcons();
       await Promise.allSettled([this.loadLibrary(), this.countVisitor()]);
       this.updateIntegrityReport();
@@ -705,6 +733,63 @@ function schoolCloud() {
       } catch { /* Ignore malformed share links. */ }
     },
 
+    readCachedLibrarySnapshot() {
+      const raw = safeStorageGet(globalThis.localStorage, LIBRARY_CACHE_STORAGE_KEY);
+      if (!raw) return null;
+      try { return normalizeCachedLibrarySnapshot(JSON.parse(raw)); }
+      catch { return null; }
+    },
+    saveCachedLibrarySnapshot(snapshot) {
+      const normalized = normalizeCachedLibrarySnapshot(snapshot);
+      if (!normalized) return false;
+      const payload = {
+        version: LIBRARY_CACHE_VERSION,
+        savedAt: new Date().toISOString(),
+        manifest: normalized.manifest,
+        library: normalized.library,
+        stats: normalized.stats
+      };
+      const stored = safeStorageSet(globalThis.localStorage, LIBRARY_CACHE_STORAGE_KEY, JSON.stringify(payload));
+      if (stored) this.libraryCacheSavedAt = payload.savedAt;
+      return stored;
+    },
+    clearCachedLibrarySnapshot() {
+      safeStorageRemove(globalThis.localStorage, LIBRARY_CACHE_STORAGE_KEY);
+      this.libraryCacheSavedAt = '';
+    },
+    applyLibrarySnapshot(snapshot, { fromCache = false, sequence = this._loadSequence } = {}) {
+      const normalizedSnapshot = normalizeCachedLibrarySnapshot(snapshot);
+      if (!normalizedSnapshot) return false;
+      const { manifest, library, stats, savedAt } = normalizedSnapshot;
+      const metaByPath = metadataFromLibrary(library);
+      const normalized = manifest
+        .map(file => normalizeLibraryEntry(file, metaByPath.get(file.path) || metaByPath.get(file.name) || {}))
+        .filter(Boolean);
+      if (sequence !== this._loadSequence) return false;
+      this.libraryMetadata = library;
+      this.metadataEntries = Object.keys(library).filter(key => !key.startsWith('_')).length;
+      if (stats && typeof stats === 'object') {
+        this.downloadStatsRecord = normalizeStatsRecord(stats);
+        this.stats.recordUpdatedAt = this.downloadStatsRecord.updatedAt || '';
+      } else {
+        this.downloadStatsRecord = null;
+        this.stats.recordUpdatedAt = '';
+      }
+      this.libraryItems = sortResources(normalized, 'newest');
+      this.usingCachedLibrary = fromCache;
+      this.loading.library = false;
+      if (savedAt) {
+        this.libraryCacheSavedAt = savedAt;
+        this.stats.updatedAtLabel = new Date(savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+      this.reseedVisitorFromRecord();
+      this.updateCounterStatus();
+      this.updateIntegrityReport();
+      this.prepareDownloadCounters();
+      this.refreshIcons();
+      return true;
+    },
+
     shareFilters() {
       const params = new URLSearchParams();
       if (this.filters.query) params.set('q', this.filters.query);
@@ -716,76 +801,90 @@ function schoolCloud() {
       this.notify('A shareable library link has been copied to the address bar.', 'success');
     },
 
-    async fetchJson(url) {
-      const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json' } });
-      if (!response.ok) throw new Error(`Could not load ${url} (HTTP ${response.status}).`);
-      return response.json();
+    async fetchJson(url, { retries = FETCH_RETRY_DELAYS_MS.length } = {}) {
+      let lastError = null;
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        try {
+          const response = await fetch(url, {
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' }
+          });
+          if (!response.ok) {
+            const error = new Error(`Could not load ${url} (HTTP ${response.status}).`);
+            error.status = response.status;
+            throw error;
+          }
+          return await response.json();
+        } catch (error) {
+          lastError = error;
+          const retryable = isTransientNetworkError(error) || isRetryableHttpStatus(error?.status);
+          if (!retryable || attempt >= retries) throw error;
+          await sleep(FETCH_RETRY_DELAYS_MS[Math.min(attempt, FETCH_RETRY_DELAYS_MS.length - 1)]);
+        }
+      }
+      throw lastError || new Error(`Could not load ${url}.`);
     },
 
-    async loadLibrary() {
-      const sequence = ++this._loadSequence;
-      this.loading.library = true;
-      this.errors.library = '';
-      this.usingCachedLibrary = false;
-      try {
-        let manifest = null;
-        let library = {};
-        const [manifestResult, metadataResult, statsResult] = await Promise.allSettled([
-          this.fetchJson(`./apps.json?v=${Date.now()}`),
-          this.fetchJson(`./library.json?v=${Date.now()}`),
-          this.fetchJson(`./stats/downloads.json?v=${Date.now()}`)
-        ]);
-        if (manifestResult.status === 'fulfilled' && Array.isArray(manifestResult.value)) manifest = manifestResult.value;
-        if (metadataResult.status === 'fulfilled') library = metadataResult.value || {};
-        this.libraryMetadata = library;
-        this.metadataEntries = Object.keys(library).filter(key => !key.startsWith('_')).length;
-        // The GitHub-saved record is advisory: a missing file (older
-        // deployments) or malformed JSON degrades to "no record" and the
-        // counters fall back to Abacus, then to per-browser values.
-        if (statsResult.status === 'fulfilled' && statsResult.value && typeof statsResult.value === 'object') {
-          this.downloadStatsRecord = normalizeStatsRecord(statsResult.value);
-          this.stats.recordUpdatedAt = this.downloadStatsRecord.updatedAt || '';
-        } else {
-          this.downloadStatsRecord = null;
-          this.stats.recordUpdatedAt = '';
-        }
-        // The visitor total may already have settled before this record
-        // arrived (both load concurrently); raise it to the saved value.
-        this.reseedVisitorFromRecord();
-        this.updateCounterStatus();
+    async loadLibrary({ force = false } = {}) {
+      if (this._loadPromise && !force) return this._loadPromise;
+      const run = async () => {
+        const sequence = ++this._loadSequence;
+        const cachedSnapshot = this.readCachedLibrarySnapshot();
+        this.loading.library = true;
+        this.errors.library = '';
+        this.usingCachedLibrary = false;
+        try {
+          let manifest = null;
+          let library = {};
+          let stats = null;
+          const [manifestResult, metadataResult, statsResult] = await Promise.allSettled([
+            this.fetchJson(`./apps.json?v=${Date.now()}`),
+            this.fetchJson(`./library.json?v=${Date.now()}`),
+            this.fetchJson(`./stats/downloads.json?v=${Date.now()}`)
+          ]);
+          if (manifestResult.status === 'fulfilled' && Array.isArray(manifestResult.value)) manifest = manifestResult.value;
+          if (metadataResult.status === 'fulfilled') library = metadataResult.value || {};
+          if (statsResult.status === 'fulfilled' && statsResult.value && typeof statsResult.value === 'object') stats = statsResult.value;
 
-        if (!manifest) {
-          const target = this.repositoryTarget;
-          const files = await readPublicRepositoryFiles({
-            owner: target.owner, repo: target.name, branch: this.githubConfig.branch || SITE_CONFIG.repository.branch
-          });
-          manifest = files.map(file => ({
-            type: 'file', name: file.name, path: file.path, sha: file.sha,
-            size: file.size, download_url: file.download_url
-          }));
-        }
+          if (!manifest) {
+            const target = this.repositoryTarget;
+            const files = await readPublicRepositoryFiles({
+              owner: target.owner, repo: target.name, branch: this.githubConfig.branch || SITE_CONFIG.repository.branch
+            });
+            manifest = files.map(file => ({
+              type: 'file', name: file.name, path: file.path, sha: file.sha,
+              size: file.size, download_url: file.download_url
+            }));
+          }
 
-        const metaByPath = metadataFromLibrary(library);
-        const normalized = manifest
-          .map(file => normalizeLibraryEntry(file, metaByPath.get(file.path) || metaByPath.get(file.name) || {}))
-          .filter(Boolean);
-        if (sequence !== this._loadSequence) return;
-        this.libraryItems = sortResources(normalized, 'newest');
-        this.loading.library = false;
-        this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-        this.updateIntegrityReport();
-        this.prepareDownloadCounters();
-        this.refreshIcons();
-      } catch (error) {
-        if (sequence !== this._loadSequence) return;
-        this.loading.library = false;
-        this.errors.library = isTransientNetworkError(error)
-          ? 'The library is temporarily unavailable. Check the connection and try again.'
-          : (error?.message || 'The library could not be loaded.');
-        this.stats.loadingDownloads = false;
-        this.updateIntegrityReport();
-        this.refreshIcons();
-      }
+          if (sequence !== this._loadSequence) return;
+          const snapshot = { manifest, library, stats };
+          this.applyLibrarySnapshot(snapshot, { fromCache: false, sequence });
+          this.saveCachedLibrarySnapshot(snapshot);
+          this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+          this.refreshIcons();
+        } catch (error) {
+          if (sequence !== this._loadSequence) return;
+          const restored = cachedSnapshot ? this.applyLibrarySnapshot(cachedSnapshot, { fromCache: true, sequence }) : false;
+          this.loading.library = false;
+          this.usingCachedLibrary = restored;
+          this.errors.library = isTransientNetworkError(error)
+            ? (restored
+              ? 'The live library is temporarily unavailable. The last saved copy is still open below.'
+              : 'The library is temporarily unavailable. Check the connection and try again.')
+            : (error?.message || 'The library could not be loaded.');
+          this.stats.loadingDownloads = false;
+          this.updateIntegrityReport();
+          this.refreshIcons();
+        }
+      };
+      let tracked = null;
+      tracked = run().finally(() => {
+        if (this._loadPromise === tracked) this._loadPromise = null;
+      });
+      this._loadPromise = tracked;
+      return tracked;
     },
 
     countVisitor() {
@@ -1023,11 +1122,11 @@ function schoolCloud() {
       this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     },
 
-    async retryLoad() { await this.loadLibrary(); },
+    async retryLoad() { await this.loadLibrary({ force: true }); },
     async syncFromGithub() {
       this.syncing = true;
       try {
-        await this.loadLibrary();
+        await this.loadLibrary({ force: true });
         this.notify(this.errors.library ? 'Library refresh failed.' : 'Library refreshed from the published site.', this.errors.library ? 'error' : 'success');
       } finally {
         this.syncing = false;
@@ -1205,6 +1304,7 @@ function schoolCloud() {
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
+      this.notify(`Download started successfully for “${item.name}”.`, 'success');
 
       // Do not block the student's download on analytics. Abacus is contacted
       // exactly once per click; a failure falls back to a per-browser count.
@@ -1458,7 +1558,7 @@ function schoolCloud() {
           this.libraryItems = [...this.libraryItems, item];
           this.stats.downloads[item.id] = 0;
         }
-        this.notify('Published to GitHub. The site will show the file everywhere after GitHub Pages finishes deploying.', 'success');
+        this.notify(`“${item?.name || result.name}” was stored in GitHub cloud storage and published successfully. The site will show the file everywhere after GitHub Pages finishes deploying.`, 'success');
         this.resetDraft();
         this.currentView = 'library';
         this.updateIntegrityReport();
@@ -1494,7 +1594,7 @@ function schoolCloud() {
       this.githubConfig.repo = `${target.owner}/${target.name}`;
       this.githubConfig.branch = this.githubConfig.branch || SITE_CONFIG.repository.branch;
       try { localStorage.setItem('schoolcloud.repository', this.githubConfig.repo); } catch { /* Browser-only convenience. */ }
-      await this.loadLibrary();
+      await this.loadLibrary({ force: true });
       // A token remembered for the previous repository is re-checked against
       // the newly saved one so the Connected state stays truthful.
       if (this.githubAuth.connected && this.githubAuth.activeToken) this.verifySavedGithubToken();
@@ -1876,7 +1976,8 @@ function schoolCloud() {
         const names = await caches.keys();
         await Promise.all(names.filter(name => name.startsWith('schoolcloud-data-') || name.startsWith('schoolcloud-files-')).map(name => caches.delete(name)));
       } catch { /* Cache API may be unavailable. */ }
-      await this.loadLibrary();
+      this.clearCachedLibrarySnapshot();
+      await this.loadLibrary({ force: true });
       this.notify('The local cloud-file cache was cleared.', 'success');
     },
     async clearData() {
@@ -1886,7 +1987,7 @@ function schoolCloud() {
       } catch { /* Ignore locked-down storage. */ }
       this.disconnectGithub();
       this.filters = { query: '', kind: '', subject: '', year: '', sort: 'newest' };
-      await this.loadLibrary();
+      await this.loadLibrary({ force: true });
       this.notify('Local settings, counters and the saved GitHub token were cleared. GitHub files remain unchanged.', 'success');
     },
 
@@ -1916,7 +2017,22 @@ Alpine.data('schoolCloud', schoolCloud);
 window.Alpine = Alpine;
 Alpine.start();
 
+function surfaceUnexpectedClientError(label, detail) {
+  console.error(`[School Cloud] Unhandled ${label}:`, detail);
+  const state = document.body?._x_dataStack?.[0];
+  if (!state?.notify) return;
+  const now = Date.now();
+  if (now - (state._lastCrashNoticeAt || 0) < CRASH_NOTICE_THROTTLE_MS) return;
+  state._lastCrashNoticeAt = now;
+  state.notify('The website recovered from an unexpected problem. Please retry the last action if needed.', 'error');
+}
+
+window.addEventListener('error', event => {
+  if (event.error?.name === 'AbortError') return;
+  surfaceUnexpectedClientError('error', event.error || event.message || event);
+});
+
 window.addEventListener('unhandledrejection', event => {
   if (event.reason?.name === 'AbortError') return;
-  console.error('[School Cloud] Unhandled promise:', event.reason);
+  surfaceUnexpectedClientError('promise', event.reason);
 });

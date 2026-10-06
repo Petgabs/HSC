@@ -1538,6 +1538,13 @@
                     Choose a file, add structured details, check the automatic preview, then publish it directly to the GitHub repository.
                     <span class="block mt-1 text-sm text-slate-500">Published files appear in the student library after GitHub Pages deploys the update.</span>
                 </p>
+                <div class="mt-4 flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-900">
+                    <i data-lucide="users" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true"></i>
+                    <p>
+                        Multiple administrators can use the upload and settings pages at the same time. If GitHub changes while you save,
+                        the website reloads the latest repository file and retries safe updates automatically instead of making everyone wait.
+                    </p>
+                </div>
                 <div class="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
                     <i data-lucide="shield-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true"></i>
                     <p>
@@ -1933,7 +1940,10 @@
 
                 <div x-show="adminAccount.unlocked" x-cloak class="bg-emerald-50 border border-emerald-100 p-4 rounded-lg mb-7 flex gap-3">
                     <i data-lucide="shield-check" class="w-5 h-5 text-emerald-600 flex-shrink-0" aria-hidden="true"></i>
-                    <p class="text-sm text-emerald-800">Save the token once as the private <code>SCHOOLCLOUD_PUBLISH_TOKEN</code> GitHub Actions repository secret. GitHub encrypts it; the token is never written as plaintext to a repository file or website asset. This static website cannot read GitHub secret values back, so the token you connect here is also saved in this browser's storage on this device. Save it once and the dashboard reconnects on its own after a reload, a new tab or the next sign-in.</p>
+                    <div class="space-y-2 text-sm text-emerald-800">
+                        <p>Save the token once as the private <code>SCHOOLCLOUD_PUBLISH_TOKEN</code> GitHub Actions repository secret. GitHub encrypts it; the token is never written as plaintext to a repository file or website asset. This static website cannot read GitHub secret values back, so the token you connect here is also saved in this browser's storage on this device. Save it once and the dashboard reconnects on its own after a reload, a new tab or the next sign-in.</p>
+                        <p class="text-emerald-900/90">Multiple administrators can open Cloud Settings together. When another admin updates GitHub first, safe saves automatically re-read the latest repository version and retry instead of locking the page.</p>
+                    </div>
                 </div>
 
                 <div x-show="adminAccount.unlocked" x-cloak class="space-y-7">
