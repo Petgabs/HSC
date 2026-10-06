@@ -324,5 +324,21 @@
     "visibility": "public",
     "version": "1.0",
     "addedAt": "2026-10-06T08:56:02.515Z"
+  },
+  "apps/Sydney Boys 2026 w. sol.pdf": {
+    "title": "Sydney Boys 2026 w. sol",
+    "subject": "EALD/English",
+    "years": [
+      11
+    ],
+    "tags": [],
+    "keywords": [],
+    "resourceType": "Revision",
+    "language": "English",
+    "owner": "Virgil",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-06T08:59:38.920Z"
   }
 }
