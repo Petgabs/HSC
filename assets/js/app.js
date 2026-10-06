@@ -1,0 +1,1307 @@
+import Alpine from '../vendor/alpine.esm.js';
+import { SITE_CONFIG, SUBJECTS, YEAR_LEVELS } from './config.js';
+import { AbacusCounters, downloadCounterKey, readLocalCounter, writeLocalCounter } from './lib/counters.js';
+import { deleteResourceFromGitHub, readPublicRepositoryFiles, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
+import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
+import { searchResources, sortResources } from './lib/search.js';
+import {
+  fileExtension, fileIcon, formatBytes, formatCount, formatDate, formatDownloadCount,
+  formatYears, freshness, isReviewDue, kindLabel, subjectAccent, visibilityAccent,
+  visibilityLabel
+} from './lib/format.js';
+import { canPreviewItem, previewDescriptor } from './lib/preview.js';
+
+const LEGACY_TOKEN_KEYS = [
+  'schoolcloud.githubToken', 'schoolCloud.githubToken', 'schoolcloud.github-token',
+  'school-cloud.github-token', 'githubAutoPublishToken', 'githubToken', 'github_token',
+  'github-token', 'hsc.github.token', 'cloudToken'
+];
+const ADMIN_LOGIN_SESSION_KEY = 'schoolcloud.admin.signed-in.v1';
+const VALID_YEAR_LEVELS = new Set(YEAR_LEVELS.map(String));
+const MAX_DESCRIPTION_LENGTH = 3000;
+
+function parseRepoName(value, fallbackOwner, fallbackName) {
+  const match = String(value || '').trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+  if (!match) return { owner: fallbackOwner, name: fallbackName };
+  return { owner: match[1], name: match[2] };
+}
+
+function emptyDraft() {
+  return {
+    title: '', description: '', topic: '', subject: '', years: '',
+    owner: '', department: '', academicYear: String(new Date().getFullYear()),
+    keywords: '', resourceType: '', language: 'English', visibility: 'public',
+    version: '1.0', reviewDate: '', licence: '', accessibility: ''
+  };
+}
+
+function emptyIntegrityReport() {
+  return {
+    status: 'ok', statusLabel: 'Ready', issues: [],
+    counts: { publishedFiles: 0, metadataEntries: 0, queueEntries: 0, errors: 0, warnings: 0 }
+  };
+}
+
+function safeStorageRemove(storage, key) {
+  try { storage?.removeItem(key); } catch { /* Storage can be disabled. */ }
+}
+
+function isTransientNetworkError(error) {
+  return error?.name === 'AbortError' || /network|fetch|timeout|offline|failed to fetch/i.test(String(error?.message || error));
+}
+
+function resolveFileUrl(item) {
+  const candidate = item?.downloadUrl || item?.url || item?.path;
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate, globalThis.location?.href || 'https://schoolcloud.invalid/');
+    const sameOrigin = Boolean(globalThis.location && url.origin === globalThis.location.origin);
+    const allowedRemote = url.protocol === 'https:' && (
+      url.hostname === 'raw.githubusercontent.com' ||
+      url.hostname === 'github.com' ||
+      url.hostname.endsWith('.github.io')
+    );
+    const allowed = (sameOrigin && ['http:', 'https:'].includes(url.protocol)) || allowedRemote;
+    return allowed ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function titleFromFilename(filename) {
+  return String(filename || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function digestHex(buffer) {
+  return Array.from(new Uint8Array(buffer), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function sha256Hex(value) {
+  if (!globalThis.crypto?.subtle) throw new Error('Secure password checking is not available in this browser.');
+  const data = new TextEncoder().encode(value);
+  return digestHex(await crypto.subtle.digest('SHA-256', data));
+}
+
+async function verifyConfiguredAdmin(username, password) {
+  const configured = SITE_CONFIG.admin;
+  if (!configured?.username || !configured?.salt || !configured?.passwordHash) {
+    return { ok: false, configurationMissing: true };
+  }
+  const usernameMatches = String(username).trim() === configured.username;
+  const candidate = await sha256Hex(`${configured.salt}:${password}`);
+  const expected = String(configured.passwordHash).trim().toLowerCase();
+  return { ok: usernameMatches && candidate === expected, configurationMissing: false };
+}
+
+function clipboardWrite(text) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text);
+  const input = document.createElement('textarea');
+  input.value = text;
+  input.setAttribute('readonly', '');
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.append(input);
+  input.select();
+  const ok = document.execCommand('copy');
+  input.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error('Clipboard access was denied.'));
+}
+
+function buildCounterClient() {
+  try {
+    return new AbacusCounters({
+      baseUrl: SITE_CONFIG.abacus.baseUrl,
+      namespace: SITE_CONFIG.abacus.namespace
+    });
+  } catch {
+    return null;
+  }
+}
+
+function calculateAgeDays(value) {
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? Math.max(0, (Date.now() - timestamp) / 86_400_000) : Infinity;
+}
+
+function makeDraftPreview(file) {
+  if (!file || !['.pdf', '.html', '.htm'].includes(`.${fileExtension(file.name).toLowerCase()}`)) return null;
+  try {
+    const src = URL.createObjectURL(file);
+    const isHtml = ['HTML', 'HTM'].includes(fileExtension(file.name));
+    return {
+      src,
+      sandbox: isHtml ? 'allow-scripts allow-forms' : 'allow-downloads',
+      label: `${isHtml ? 'HTML' : 'PDF'} preview of ${file.name}`
+    };
+  } catch {
+    return null;
+  }
+}
+
+function bytesToFileName(file) {
+  return String(file?.name || '').normalize('NFC').trim();
+}
+
+function countBy(items, selector) {
+  const counts = new Map();
+  for (const item of items) {
+    const value = selector(item);
+    if (value === undefined || value === null || value === '') continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return counts;
+}
+
+function currentYearAcademicOptions() {
+  const year = new Date().getFullYear();
+  return [`${year}`, `${year - 1}/${year}`, `${year}/${year + 1}`];
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function schoolCloud() {
+  return {
+    currentView: 'library',
+    isAdmin: false,
+    showLogin: false,
+    loginMode: 'admin',
+    loginForm: { username: '', password: '' },
+    checkingLogin: false,
+    loginError: '',
+    loginConfigMissing: !SITE_CONFIG.admin.username || !SITE_CONFIG.admin.passwordHash || !SITE_CONFIG.admin.salt,
+    studentGreeting: 'Welcome',
+    offline: !navigator.onLine,
+    refreshingSite: false,
+    showFilters: true,
+    filters: { query: '', kind: '', subject: '', year: '', sort: 'newest' },
+    errors: { library: '', preview: '' },
+    loading: { library: true, preview: false },
+    usingCachedLibrary: false,
+    libraryItems: [],
+    libraryMetadata: {},
+    metadataEntries: 0,
+    dataLoadError: '',
+    stats: {
+      visitors: 0,
+      loadingVisitors: true,
+      downloads: {},
+      loadingDownloads: true,
+      online: false,
+      backend: 'local',
+      updatedAtLabel: 'Not yet refreshed'
+    },
+    githubConfig: {
+      repo: `${SITE_CONFIG.repository.owner}/${SITE_CONFIG.repository.name}`,
+      branch: SITE_CONFIG.repository.branch
+    },
+    githubAuth: {
+      token: '',
+      activeToken: '',
+      connected: false,
+      login: '',
+      showToken: false,
+      verifying: false,
+      error: ''
+    },
+    syncing: false,
+    deletingAppId: '',
+    dashboardResourceQuery: '',
+    dashboardResourceType: 'all',
+    statsAgeBucketOpen: '',
+    statsCleanupMinAgeDays: 365,
+    statsCleanupMaxDownloads: 3,
+    ageBuckets: ['recent', 'quarter', 'half-year', 'year-plus'],
+    ageBucketLabels: {
+      recent: 'Last 30 days', quarter: '31–90 days',
+      'half-year': '91–180 days', 'year-plus': 'More than 180 days'
+    },
+    draft: emptyDraft(),
+    draftFile: null,
+    draftFilePreview: null,
+    draftErrors: { file: '', title: '', subject: '', years: '', owner: '' },
+    uploadMessage: '',
+    uploadMessageTone: 'info',
+    submitting: false,
+    formOptions: {
+      subjects: [...SUBJECTS],
+      yearLevels: YEAR_LEVELS.map(String),
+      departments: [...SUBJECTS],
+      resourceTypes: ['Worksheet', 'Notes', 'Revision', 'Assessment', 'Interactive mini app', 'Other'],
+      languages: ['English', 'Arabic', 'Bengali', 'Chinese', 'Hindi', 'Other'],
+      visibilities: [
+        { value: 'public', label: 'Public', hint: 'Available to anyone with the website link.' },
+        { value: 'school', label: 'School only', hint: 'This is a label only; public-site files are not access restricted.' },
+        { value: 'class', label: 'Class only', hint: 'This is a label only; public-site files are not access restricted.' }
+      ],
+      licences: ['All rights reserved', 'Creative Commons BY', 'Creative Commons BY-SA', 'Public domain', 'Permission granted']
+    },
+    academicYears: currentYearAcademicOptions(),
+    preview: { open: false, item: null, descriptor: null, objectUrl: '' },
+    toast: { message: '', tone: 'info', visible: false },
+    _toastTimer: null,
+    _counterClient: buildCounterClient(),
+    _visitorOnline: false,
+    _downloadCountersOnline: false,
+    _counterReadStarted: [],
+    _counterReadInFlight: [],
+    _counterReadAt: {},
+    _loadSequence: 0,
+    _initialized: false,
+    _dismissedIntegrityIssueIds: [],
+    localDrafts: [],
+    submissionRecords: [],
+    cloudQueue: { available: false, loading: false, loadedAt: null, error: '' },
+    publishingSubmissionId: '',
+    integrityUi: {
+      running: false,
+      repairing: false,
+      troubleshooterOpen: false,
+      hideIssues: false,
+      ranAt: null,
+      summary: '',
+      log: []
+    },
+    integrityReport: emptyIntegrityReport(),
+    integrityDiagnosis: null,
+
+    get isStaff() { return this.isAdmin; },
+    get apps() { return this.libraryItems; },
+    get miniApps() { return this.apps.filter(item => ['html', 'htm'].includes(fileExtension(item).toLowerCase())); },
+    get resources() { return this.apps.filter(item => !['html', 'htm'].includes(fileExtension(item).toLowerCase())); },
+    get localAppCount() { return this.localDrafts.length; },
+    get cloudAppCount() { return this.apps.length; },
+    get pendingSubmissions() { return this.submissionRecords.filter(record => record.status === 'pending'); },
+    get reviewedSubmissions() { return this.submissionRecords.filter(record => record.status !== 'pending'); },
+    get submissionCounts() { return { pending: this.pendingSubmissions.length }; },
+    get autoPublishReady() { return this.githubAuth.connected && Boolean(this.githubAuth.activeToken); },
+    get repositoryTarget() {
+      return parseRepoName(this.githubConfig.repo, SITE_CONFIG.repository.owner, SITE_CONFIG.repository.name);
+    },
+    get hasActiveFilters() {
+      return Boolean(this.filters.query || this.filters.kind || this.filters.subject || this.filters.year);
+    },
+    get yearLevels() { return [...YEAR_LEVELS]; },
+    get subjectOptions() {
+      const seen = new Set(this.apps.map(item => item.meta.subject).filter(Boolean));
+      return [...seen].sort((a, b) => a.localeCompare(b));
+    },
+    get yearOptions() {
+      const values = new Set(this.apps.flatMap(item => item.meta.years || []).map(Number));
+      return [...values].sort((a, b) => a - b);
+    },
+    get facets() {
+      const subjects = countBy(this.apps, item => item.meta.subject);
+      const years = new Map();
+      for (const item of this.apps) for (const year of item.meta.years || []) years.set(Number(year), (years.get(Number(year)) || 0) + 1);
+      return { subjects, years, apps: this.miniApps.length, documents: this.resources.length };
+    },
+    get subjectShortcuts() {
+      const popular = [...this.facets.subjects.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      return popular.map(([subject, count]) => ({ subject, count }));
+    },
+    get filteredMiniApps() {
+      let result = searchResources(this.miniApps, this.filters.query);
+      if (this.filters.kind === 'document') return [];
+      if (this.filters.subject) result = result.filter(item => item.meta.subject === this.filters.subject);
+      if (this.filters.year) result = result.filter(item => (item.meta.years || []).map(String).includes(String(this.filters.year)));
+      return sortResources(result, this.filters.sort);
+    },
+    get filteredResources() {
+      let result = searchResources(this.resources, this.filters.query);
+      if (this.filters.kind === 'app') return [];
+      if (this.filters.subject) result = result.filter(item => item.meta.subject === this.filters.subject);
+      if (this.filters.year) result = result.filter(item => (item.meta.years || []).map(String).includes(String(this.filters.year)));
+      return sortResources(result, this.filters.sort);
+    },
+    get resultCount() { return this.filteredMiniApps.length + this.filteredResources.length; },
+    get filterSummary() {
+      const parts = [];
+      if (this.filters.kind) parts.push(this.filters.kind === 'app' ? 'Mini apps' : 'Documents');
+      if (this.filters.subject) parts.push(this.filters.subject);
+      if (this.filters.year) parts.push(`Year ${this.filters.year}`);
+      if (this.filters.query) parts.push(`“${this.filters.query}”`);
+      return parts.length ? `Filtered by ${parts.join(' · ')}` : 'All learning resources';
+    },
+    get latestCount() { return this.apps.filter(item => this.isLatest(item)).length; },
+    get totalDownloads() { return Object.values(this.stats.downloads).reduce((sum, value) => sum + (Number(value) || 0), 0); },
+    get rankedMiniApps() { return [...this.miniApps].sort((a, b) => this.downloadsOf(b) - this.downloadsOf(a)); },
+    get topResources() { return [...this.apps].sort((a, b) => this.downloadsOf(b) - this.downloadsOf(a)).slice(0, 6); },
+    get reviewDueApps() { return this.apps.filter(item => isReviewDue(item.meta.reviewDate)); },
+    get dashboardResourceCounts() {
+      const count = (fn) => this.resources.filter(fn).length;
+      return {
+        all: this.resources.length,
+        pdf: count(item => fileExtension(item).toLowerCase() === 'pdf'),
+        word: count(item => ['doc', 'docx'].includes(fileExtension(item).toLowerCase())),
+        excel: count(item => ['xls', 'xlsx'].includes(fileExtension(item).toLowerCase())),
+        ppt: count(item => ['ppt', 'pptx'].includes(fileExtension(item).toLowerCase())),
+        cloud: count(item => item.source === 'github')
+      };
+    },
+    get filteredDashboardResources() {
+      let result = searchResources(this.resources, this.dashboardResourceQuery);
+      const type = this.dashboardResourceType;
+      if (type === 'pdf') result = result.filter(item => fileExtension(item).toLowerCase() === 'pdf');
+      if (type === 'word') result = result.filter(item => ['doc', 'docx'].includes(fileExtension(item).toLowerCase()));
+      if (type === 'excel') result = result.filter(item => ['xls', 'xlsx'].includes(fileExtension(item).toLowerCase()));
+      if (type === 'ppt') result = result.filter(item => ['ppt', 'pptx'].includes(fileExtension(item).toLowerCase()));
+      if (type === 'cloud') result = result.filter(item => item.source === 'github');
+      return sortResources(result, 'title');
+    },
+    get cloudStorageStatistics() {
+      const files = this.apps.filter(item => item.source === 'github');
+      const known = files.filter(item => item.size > 0);
+      return {
+        totalBytes: known.reduce((sum, item) => sum + item.size, 0),
+        totalCount: files.length,
+        knownCount: known.length,
+        unknownCount: files.length - known.length
+      };
+    },
+    get yearLevelStatistics() {
+      const counts = Object.fromEntries(YEAR_LEVELS.map(year => [year, 0]));
+      let unclassified = 0;
+      for (const item of this.apps) {
+        const years = item.meta.years || [];
+        if (!years.length) unclassified += 1;
+        for (const year of years) if (year in counts) counts[year] += 1;
+      }
+      return { counts, unclassified };
+    },
+    get subjectStatistics() {
+      const map = new Map();
+      for (const item of this.apps) {
+        const subject = item.meta.subject || 'Unclassified';
+        const entry = map.get(subject) || { subject, count: 0, totalSize: 0 };
+        entry.count += 1;
+        entry.totalSize += item.size || 0;
+        map.set(subject, entry);
+      }
+      return [...map.values()].sort((a, b) => b.count - a.count || a.subject.localeCompare(b.subject));
+    },
+    get teacherStatistics() {
+      const owners = new Map();
+      for (const item of this.apps) {
+        const owner = item.meta.owner || item.teacherName || 'Unattributed';
+        const row = owners.get(owner) || {
+          owner, uploads: 0, yearCounts: Object.fromEntries(YEAR_LEVELS.map(year => [year, 0])),
+          subjectCounts: {}, totalSize: 0, lastUploadAt: '', lastUploadDaysAgo: Infinity
+        };
+        row.uploads += 1;
+        row.totalSize += item.size || 0;
+        for (const year of item.meta.years || []) row.yearCounts[Number(year)] = (row.yearCounts[Number(year)] || 0) + 1;
+        row.subjectCounts[item.meta.subject || 'Unclassified'] = (row.subjectCounts[item.meta.subject || 'Unclassified'] || 0) + 1;
+        if (item.addedAt && (!row.lastUploadAt || Date.parse(item.addedAt) > Date.parse(row.lastUploadAt))) row.lastUploadAt = item.addedAt;
+        row.lastUploadDaysAgo = row.lastUploadAt ? calculateAgeDays(row.lastUploadAt) : Infinity;
+        owners.set(owner, row);
+      }
+      return [...owners.values()].sort((a, b) => b.uploads - a.uploads || a.owner.localeCompare(b.owner));
+    },
+    get resourcesByAgeBucket() {
+      const result = Object.fromEntries(this.ageBuckets.map(bucket => [bucket, []]));
+      for (const item of this.apps) {
+        const age = calculateAgeDays(item.addedAt || item.meta.addedAt);
+        const bucket = age <= 30 ? 'recent' : age <= 90 ? 'quarter' : age <= 180 ? 'half-year' : 'year-plus';
+        result[bucket].push({
+          id: item.id, title: item.name, owner: item.meta.owner, subject: item.meta.subject,
+          uploadedAt: item.addedAt, downloads: this.downloadsOf(item), fileName: item.fileName
+        });
+      }
+      return result;
+    },
+    get cleanupCandidates() {
+      return this.apps
+        .map(item => ({
+          id: item.id, title: item.name, owner: item.meta.owner, subject: item.meta.subject,
+          uploadedAt: item.addedAt || item.meta.addedAt,
+          ageDays: calculateAgeDays(item.addedAt || item.meta.addedAt),
+          downloads: this.downloadsOf(item), fileName: item.fileName
+        }))
+        .filter(item => item.ageDays >= Number(this.statsCleanupMinAgeDays) && item.downloads <= Number(this.statsCleanupMaxDownloads))
+        .sort((a, b) => b.ageDays - a.ageDays);
+    },
+    get integrityStatusClass() {
+      if (this.integrityReport.status === 'error') return 'bg-rose-50 text-rose-700 ring-rose-200';
+      if (this.integrityReport.status === 'warning') return 'bg-amber-50 text-amber-700 ring-amber-200';
+      return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+    },
+    get integrityIssueCount() { return this.integrityReport.issues.length; },
+    get dismissedIntegrityCount() { return this._dismissedIntegrityIssueIds.length; },
+    get visibleIntegrityIssues() {
+      if (this.integrityUi.hideIssues) return [];
+      return this.integrityReport.issues.filter(issue => !this._dismissedIntegrityIssueIds.includes(issue.id));
+    },
+    get dashboardAttentionCount() { return this.managementAlerts.length; },
+    get managementAlerts() {
+      const alerts = [];
+      if (!this.githubAuth.connected) alerts.push({
+        id: 'github-token', tone: 'amber', icon: 'key-round', label: 'GitHub upload is not connected',
+        description: 'Paste the replacement repository token in Settings to publish files directly.',
+        actionLabel: 'Open Settings', destination: 'settings', count: 1
+      });
+      if (this.errors.library) alerts.push({
+        id: 'library-load', tone: 'rose', icon: 'triangle-alert', label: 'The live library could not be refreshed',
+        description: this.errors.library, actionLabel: 'Retry', destination: 'library', count: 1
+      });
+      if (this.reviewDueApps.length) alerts.push({
+        id: 'review-due', tone: 'amber', icon: 'calendar-clock', label: 'Resources need review',
+        description: `${this.reviewDueApps.length} file(s) are past their review date.`,
+        actionLabel: 'Review files', destination: 'library', count: this.reviewDueApps.length
+      });
+      return alerts;
+    },
+    get integrityDiagnosis() { return this._integrityDiagnosis || null; },
+    set integrityDiagnosis(value) { this._integrityDiagnosis = value; },
+    _integrityDiagnosis: null,
+    get draftCardMeta() {
+      const curated = {
+        title: this.draft.title,
+        subject: this.draft.subject,
+        keywords: String(this.draft.keywords || '').split(',').map(value => value.trim()).filter(Boolean),
+        visibility: this.draft.visibility || 'public'
+      };
+      if (this.draft.years) curated.years = [Number(this.draft.years)];
+      const inferred = inferMetadata(this.draftFile?.name || '', curated);
+      return {
+        subject: this.draft.subject || inferred.subject,
+        years: this.draft.years ? [Number(this.draft.years)] : inferred.years,
+        visibility: this.draft.visibility || 'public',
+        tags: inferred.tags
+      };
+    },
+
+    async init() {
+      if (this._initialized) return;
+      this._initialized = true;
+      this.clearLegacyTokens();
+      this.loadSavedRepoSettings();
+      this.isAdmin = false;
+      this.githubAuth.token = '';
+      this.githubAuth.activeToken = '';
+      this.githubAuth.connected = false;
+      this.offline = !navigator.onLine;
+      window.addEventListener('online', () => { this.offline = false; this.loadLibrary(); });
+      window.addEventListener('offline', () => { this.offline = true; });
+      this.readSharedFilters();
+      this.refreshIcons();
+      await Promise.allSettled([this.loadLibrary(), this.countVisitor()]);
+      this.updateIntegrityReport();
+      this.refreshIcons();
+    },
+
+    clearLegacyTokens() {
+      for (const key of LEGACY_TOKEN_KEYS) {
+        safeStorageRemove(globalThis.sessionStorage, key);
+        safeStorageRemove(globalThis.localStorage, key);
+      }
+      // The current token is intentionally never restored from browser storage.
+      this.githubAuth.token = '';
+      this.githubAuth.activeToken = '';
+    },
+
+    loadSavedRepoSettings() {
+      try {
+        const saved = localStorage.getItem('schoolcloud.repository');
+        if (saved) {
+          const repo = parseRepoName(saved, SITE_CONFIG.repository.owner, SITE_CONFIG.repository.name);
+          this.githubConfig.repo = `${repo.owner}/${repo.name}`;
+        }
+      } catch { /* Defaults are fine when storage is blocked. */ }
+    },
+
+    readSharedFilters() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('q')) this.filters.query = params.get('q') || '';
+        if (params.has('subject')) this.filters.subject = params.get('subject') || '';
+        if (params.has('year')) this.filters.year = params.get('year') || '';
+        if (params.has('kind')) this.filters.kind = params.get('kind') || '';
+      } catch { /* Ignore malformed share links. */ }
+    },
+
+    shareFilters() {
+      const params = new URLSearchParams();
+      if (this.filters.query) params.set('q', this.filters.query);
+      if (this.filters.subject) params.set('subject', this.filters.subject);
+      if (this.filters.year) params.set('year', this.filters.year);
+      if (this.filters.kind) params.set('kind', this.filters.kind);
+      const suffix = params.size ? `?${params}` : window.location.pathname;
+      history.replaceState(null, '', suffix);
+      this.notify('A shareable library link has been copied to the address bar.', 'success');
+    },
+
+    async fetchJson(url) {
+      const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error(`Could not load ${url} (HTTP ${response.status}).`);
+      return response.json();
+    },
+
+    async loadLibrary() {
+      const sequence = ++this._loadSequence;
+      this.loading.library = true;
+      this.errors.library = '';
+      this.usingCachedLibrary = false;
+      try {
+        let manifest = null;
+        let library = {};
+        const [manifestResult, metadataResult] = await Promise.allSettled([
+          this.fetchJson(`./apps.json?v=${Date.now()}`),
+          this.fetchJson(`./library.json?v=${Date.now()}`)
+        ]);
+        if (manifestResult.status === 'fulfilled' && Array.isArray(manifestResult.value)) manifest = manifestResult.value;
+        if (metadataResult.status === 'fulfilled') library = metadataResult.value || {};
+        this.libraryMetadata = library;
+        this.metadataEntries = Object.keys(library).filter(key => !key.startsWith('_')).length;
+
+        if (!manifest) {
+          const target = this.repositoryTarget;
+          const files = await readPublicRepositoryFiles({
+            owner: target.owner, repo: target.name, branch: this.githubConfig.branch || SITE_CONFIG.repository.branch
+          });
+          manifest = files.map(file => ({
+            type: 'file', name: file.name, path: file.path, sha: file.sha,
+            size: file.size, download_url: file.download_url
+          }));
+        }
+
+        const metaByPath = metadataFromLibrary(library);
+        const normalized = manifest
+          .map(file => normalizeLibraryEntry(file, metaByPath.get(file.path) || metaByPath.get(file.name) || {}))
+          .filter(Boolean);
+        if (sequence !== this._loadSequence) return;
+        this.libraryItems = sortResources(normalized, 'newest');
+        this.loading.library = false;
+        this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        this.updateIntegrityReport();
+        this.prepareDownloadCounters();
+        this.refreshIcons();
+      } catch (error) {
+        if (sequence !== this._loadSequence) return;
+        this.loading.library = false;
+        this.errors.library = isTransientNetworkError(error)
+          ? 'The library is temporarily unavailable. Check the connection and try again.'
+          : (error?.message || 'The library could not be loaded.');
+        this.stats.loadingDownloads = false;
+        this.updateIntegrityReport();
+        this.refreshIcons();
+      }
+    },
+
+    async countVisitor() {
+      this.stats.loadingVisitors = true;
+      const key = SITE_CONFIG.abacus.visitorKey;
+      const local = readLocalCounter(key);
+      if (!this._counterClient) {
+        this.stats.visitors = writeLocalCounter(key, local + 1);
+        this.stats.loadingVisitors = false;
+        this._visitorOnline = false;
+        this.updateCounterStatus();
+        return;
+      }
+      try {
+        const value = await this._counterClient.hit(key);
+        this.stats.visitors = writeLocalCounter(key, Math.max(local, value));
+        this._visitorOnline = true;
+      } catch {
+        this.stats.visitors = writeLocalCounter(key, local + 1);
+        this._visitorOnline = false;
+      } finally {
+        this.stats.loadingVisitors = false;
+        this.updateCounterStatus();
+      }
+    },
+
+    prepareDownloadCounters() {
+      window.__schoolCloudCounterObserver?.disconnect();
+      this._counterReadStarted = [];
+      this._counterReadInFlight = [];
+      for (const item of this.apps) {
+        item.counterKey = downloadCounterKey(item.path);
+        this.stats.downloads[item.id] = readLocalCounter(item.counterKey);
+      }
+      this.stats.loadingDownloads = false;
+      this.updateCounterStatus();
+      if (this.isAdmin && this.currentView === 'dashboard') this.loadDownloadCounters();
+    },
+
+    observeDownloadCounter(item, element) {
+      if (!item || !element) return;
+      item.counterKey ||= downloadCounterKey(item.path);
+      if (this.stats.downloads[item.id] === undefined) {
+        this.stats.downloads[item.id] = readLocalCounter(item.counterKey);
+      }
+      if (!this._counterClient || this._counterReadStarted.includes(item.id)) return;
+
+      // Keep Abacus reads below its per-IP rate limit: fetch counts when cards
+      // approach the viewport instead of requesting every file on every visit.
+      if (typeof window.IntersectionObserver === 'function') {
+        let observer = window.__schoolCloudCounterObserver;
+        if (!observer) {
+          observer = new window.IntersectionObserver(entries => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              observer.unobserve(entry.target);
+              const state = entry.target._schoolCloudCounterState;
+              const file = entry.target._schoolCloudCounterItem;
+              if (state && file) state.readDownloadCounter(file);
+            }
+          }, { rootMargin: '120px 0px' });
+          window.__schoolCloudCounterObserver = observer;
+        }
+        element._schoolCloudCounterState = this;
+        element._schoolCloudCounterItem = item;
+        observer.observe(element);
+        return;
+      }
+
+      // Older browsers without IntersectionObserver read a small first batch;
+      // clicking any other file still increments that file's Abacus counter.
+      if (this._counterReadStarted.length < 8) this.readDownloadCounter(item);
+    },
+
+    async readDownloadCounter(item, force = false) {
+      if (!item || !this._counterClient) return;
+      if (this._counterReadInFlight.includes(item.id)) return;
+      if (!force && this._counterReadStarted.includes(item.id)) return;
+      if (!this._counterReadStarted.includes(item.id)) this._counterReadStarted.push(item.id);
+      this._counterReadInFlight.push(item.id);
+      this._counterReadAt[item.id] = Date.now();
+      const key = item.counterKey || downloadCounterKey(item.path);
+      item.counterKey = key;
+      try {
+        const value = await this._counterClient.get(key);
+        const total = Math.max(this.downloadsOf(item), value);
+        this.stats.downloads[item.id] = total;
+        writeLocalCounter(key, total);
+        this._downloadCountersOnline = true;
+        this.updateCounterStatus();
+      } catch {
+        this.stats.downloads[item.id] = Math.max(this.downloadsOf(item), readLocalCounter(key));
+      } finally {
+        this._counterReadInFlight = this._counterReadInFlight.filter(id => id !== item.id);
+      }
+    },
+
+    async loadDownloadCounters(items = this.apps, force = true) {
+      const now = Date.now();
+      const queue = [...items].filter(item => {
+        if (!force) return !this._counterReadStarted.includes(item.id);
+        return now - (Number(this._counterReadAt[item.id]) || 0) >= 10_000;
+      });
+      if (!items.length) {
+        this._downloadCountersOnline = false;
+        this.stats.loadingDownloads = false;
+        this.updateCounterStatus();
+        return;
+      }
+      if (!queue.length) {
+        this.stats.loadingDownloads = false;
+        return;
+      }
+      this.stats.loadingDownloads = true;
+      this._downloadCountersOnline = false;
+      this.updateCounterStatus();
+      const worker = async () => {
+        while (queue.length) {
+          const item = queue.shift();
+          await this.readDownloadCounter(item, force);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker));
+      this.stats.loadingDownloads = false;
+      this.updateCounterStatus(this._downloadCountersOnline);
+      this.refreshIcons();
+    },
+
+    updateCounterStatus(downloadCountersOnline) {
+      if (downloadCountersOnline !== undefined) this._downloadCountersOnline = Boolean(downloadCountersOnline);
+      this.stats.online = Boolean(this._visitorOnline || this._downloadCountersOnline) && Boolean(this._counterClient);
+      this.stats.backend = this.stats.online ? 'abacus' : 'local';
+    },
+
+    async refreshStats() {
+      if (this.stats.loadingDownloads) return;
+      await this.loadDownloadCounters();
+      this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    },
+
+    async retryLoad() { await this.loadLibrary(); },
+    async syncFromGithub() {
+      this.syncing = true;
+      try {
+        await this.loadLibrary();
+        this.notify(this.errors.library ? 'Library refresh failed.' : 'Library refreshed from the published site.', this.errors.library ? 'error' : 'success');
+      } finally {
+        this.syncing = false;
+      }
+    },
+
+    refreshIcons() {
+      requestAnimationFrame(() => {
+        try { window.lucide?.createIcons?.(); } catch { /* Icons are decorative. */ }
+      });
+    },
+
+    refreshWebsite() {
+      this.refreshingSite = true;
+      const registration = navigator.serviceWorker?.getRegistration?.();
+      Promise.resolve(registration).then(reg => reg?.update?.()).catch(() => {}).finally(() => {
+        window.setTimeout(() => window.location.reload(), 150);
+      });
+    },
+
+    openDashboard() {
+      if (!this.isAdmin) return;
+      this.currentView = 'dashboard';
+      this.refreshIcons();
+      if (!this.stats.loadingDownloads) this.loadDownloadCounters(this.apps, false);
+    },
+    openUpload() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      this.uploadMessage = '';
+      this.draftErrors = { file: '', title: '', subject: '', years: '', owner: '' };
+      this.currentView = 'upload';
+      this.refreshIcons();
+    },
+    openSubmissions() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      this.refreshCloudQueue();
+      this.currentView = 'submissions';
+    },
+    openAdminWorkspace(destination) {
+      if (!this.isAdmin) return;
+      if (destination === 'upload') return this.openUpload();
+      if (destination === 'submissions') return this.openSubmissions();
+      if (destination === 'settings') return this.currentView = 'settings';
+      if (destination === 'library') return this.currentView = 'library';
+      this.currentView = destination || 'dashboard';
+    },
+    openLogin() {
+      this.loginMode = 'admin';
+      this.loginError = '';
+      this.loginForm.username = '';
+      this.loginForm.password = '';
+      this.showLogin = true;
+      this.$nextTick(() => document.getElementById('login-user')?.focus());
+      this.refreshIcons();
+    },
+    async login() {
+      if (this.checkingLogin) return;
+      this.checkingLogin = true;
+      this.loginError = '';
+      try {
+        const result = await verifyConfiguredAdmin(this.loginForm.username, this.loginForm.password);
+        if (result.configurationMissing) {
+          this.loginError = 'The original admin username and password hash are not included in this repository checkout. Restore the existing values in assets/js/config.js to keep the same admin login; do not put a plain password there.';
+          return;
+        }
+        if (!result.ok) {
+          this.loginError = 'The username or password is incorrect.';
+          return;
+        }
+        this.isAdmin = true;
+        try { sessionStorage.setItem(ADMIN_LOGIN_SESSION_KEY, SITE_CONFIG.admin.username); } catch { /* Current tab stays signed in. */ }
+        this.showLogin = false;
+        this.loginForm.password = '';
+        this.openDashboard();
+      } catch (error) {
+        this.loginError = error?.message || 'Could not check the admin sign-in.';
+      } finally {
+        this.checkingLogin = false;
+      }
+    },
+    logout() {
+      this.isAdmin = false;
+      this.githubAuth.activeToken = '';
+      this.githubAuth.token = '';
+      this.githubAuth.connected = false;
+      this.githubAuth.login = '';
+      this.githubAuth.error = '';
+      this.loginForm.password = '';
+      safeStorageRemove(globalThis.sessionStorage, ADMIN_LOGIN_SESSION_KEY);
+      this.currentView = 'library';
+      this.showLogin = false;
+      this.notify('You have signed out. The GitHub token was cleared from this tab.', 'success');
+    },
+
+    focusLibrarySearch() {
+      this.currentView = 'library';
+      this.$nextTick(() => document.getElementById('library-search')?.focus());
+    },
+    browseLatest() {
+      this.clearFilters();
+      this.filters.sort = 'newest';
+      this.currentView = 'library';
+    },
+    browseSubject(subject) {
+      this.filters.subject = subject;
+      this.currentView = 'library';
+      document.getElementById('library-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    setKind(kind) { this.filters.kind = this.filters.kind === kind ? '' : kind; },
+    setSubject(subject) { this.filters.subject = this.filters.subject === subject ? '' : subject; },
+    setYear(year) { this.filters.year = String(this.filters.year) === String(year) ? '' : String(year); },
+    clearFilters() { this.filters = { ...this.filters, query: '', kind: '', subject: '', year: '' }; },
+    openPreview(item) {
+      const descriptor = previewDescriptor(item);
+      if (!descriptor) {
+        this.notify('A preview is not available for this file type. Use Download instead.', 'info');
+        return;
+      }
+      this.preview.item = item;
+      this.preview.descriptor = descriptor;
+      this.preview.open = true;
+      this.loading.preview = true;
+      this.errors.preview = '';
+      this.$nextTick(() => document.getElementById('preview-close')?.focus());
+      window.setTimeout(() => {
+        if (this.preview.open && this.loading.preview) this.onPreviewLoad();
+      }, 9000);
+    },
+    downloadApp(item) {
+      const href = resolveFileUrl(item);
+      if (!href) {
+        this.notify('This file has no safe download link. Refresh the library and try again.', 'error');
+        return;
+      }
+      const key = item.counterKey || downloadCounterKey(item.path);
+      const current = this.downloadsOf(item);
+      this.stats.downloads[item.id] = current + 1;
+      writeLocalCounter(key, current + 1);
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.download = item.fileName || '';
+      anchor.setAttribute('aria-hidden', 'true');
+      anchor.style.position = 'fixed';
+      anchor.style.left = '-9999px';
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+
+      // Do not block the student's download on analytics. Abacus is contacted
+      // exactly once per click; a failure falls back to a per-browser count.
+      if (this._counterClient) {
+        this._counterClient.hit(key).then(value => {
+          const total = Math.max(this.downloadsOf(item), value);
+          this.stats.downloads[item.id] = total;
+          writeLocalCounter(key, total);
+          this._downloadCountersOnline = true;
+          this.updateCounterStatus();
+        }).catch(() => {
+          this.updateCounterStatus();
+        });
+      }
+    },
+    confirmDeleteApp(item) {
+      if (!this.isAdmin) return this.openLogin('admin');
+      if (!item || item.source !== 'github') {
+        this.notify('Only GitHub-published files can be deleted from the repository.', 'info');
+        return;
+      }
+      if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
+        this.notify('Connect a GitHub token in Settings before deleting a repository file.', 'error');
+        this.currentView = 'settings';
+        return;
+      }
+      if (!window.confirm(`Delete “${item.name}” from GitHub and the public library? This cannot be undone.`)) return;
+      this.deleteGithubResource(item);
+    },
+    async deleteGithubResource(item) {
+      this.deletingAppId = item.id;
+      const target = this.repositoryTarget;
+      try {
+        await deleteResourceFromGitHub({
+          owner: target.owner, repo: target.name, branch: this.githubConfig.branch,
+          token: this.githubAuth.activeToken, path: item.path
+        });
+        this.libraryItems = this.libraryItems.filter(entry => entry.id !== item.id);
+        this.notify('The file and its library metadata were deleted from GitHub.', 'success');
+      } catch (error) {
+        if (error.deletedPath) this.libraryItems = this.libraryItems.filter(entry => entry.id !== item.id);
+        this.notify(error.deletedPath
+          ? 'The file was deleted, but its library metadata still needs cleanup. Check library.json in GitHub.'
+          : (error.message || 'The file could not be deleted.'), 'error');
+      } finally {
+        this.deletingAppId = '';
+        this.updateIntegrityReport();
+      }
+    },
+
+    downloadsOf(item) { return Math.max(0, Number(this.stats.downloads[item?.id]) || 0); },
+    downloadLabel(item) { return `Abacus download count: ${formatCount(this.downloadsOf(item))}`; },
+    isLatest(item) { return calculateAgeDays(item?.addedAt || item?.meta?.addedAt) < 1; },
+    freshness(item) { return freshness(item); },
+    isReviewDue(value) { return isReviewDue(value); },
+    formatCount(value) { return formatCount(value); },
+    formatDate(value) { return formatDate(value); },
+    formatBytes(value) { return formatBytes(value); },
+    formatYears(value) { return formatYears(value); },
+    formatDownloadCount(value) { return formatDownloadCount(value); },
+    fileExtension(item) { return fileExtension(item); },
+    fileIcon(item) { return fileIcon(item); },
+    kindLabel(item) { return kindLabel(item); },
+    subjectAccent(subject) { return subjectAccent(subject); },
+    visibilityAccent(value) { return visibilityAccent(value); },
+    visibilityLabel(value) { return visibilityLabel(value); },
+    sharePercent(item) { return this.totalDownloads ? Math.round(this.downloadsOf(item) / this.totalDownloads * 100) : 0; },
+    canPreview(item) { return canPreviewItem(item); },
+    titlePlaceholder() { return this.draftFile ? `A clear title for ${titleFromFilename(this.draftFile.name)}` : 'e.g. Year 12 HSC Mathematics — Revision'; },
+
+    setDraftFile(file) {
+      this.draftErrors.file = '';
+      this.uploadMessage = '';
+      if (!file) return;
+      if (!isSupportedFile(file.name)) {
+        this.draftErrors.file = 'Use an HTML, PDF, Word, Excel or PowerPoint file.';
+        return;
+      }
+      if (file.size > SITE_CONFIG.maxUploadBytes) {
+        this.draftErrors.file = `Files must be 50 MB or smaller. This file is ${formatBytes(file.size)}.`;
+        return;
+      }
+      if (this.draftFilePreview?.src?.startsWith('blob:')) URL.revokeObjectURL(this.draftFilePreview.src);
+      this.draftFile = file;
+      this.draftFilePreview = makeDraftPreview(file);
+      if (!this.draft.title) this.draft.title = titleFromFilename(file.name);
+      const guessed = inferMetadata(file.name);
+      if (!this.draft.subject && guessed.subject !== 'Others') this.draft.subject = guessed.subject;
+      if (!this.draft.years && guessed.years.length) this.draft.years = String(guessed.years[0]);
+      this.refreshIcons();
+    },
+    handleFileChange(event) { this.setDraftFile(event?.target?.files?.[0] || null); },
+    handleFileDrop(event) { this.setDraftFile(event?.dataTransfer?.files?.[0] || null); },
+    suggestedSubject() {
+      if (!this.draftFile) return '';
+      const subject = inferMetadata(this.draftFile.name).subject;
+      return SUBJECTS.includes(subject) && subject !== 'Others' ? subject : '';
+    },
+    suggestedYearsLabel() {
+      if (!this.draftFile) return '';
+      const years = inferMetadata(this.draftFile.name).years;
+      return years.length ? `Year ${years[0]}` : '';
+    },
+    applySuggestedSubject() { this.draft.subject = this.suggestedSubject(); },
+    applySuggestedYears() {
+      const year = inferMetadata(this.draftFile?.name || '').years[0];
+      if (year) this.draft.years = String(year);
+    },
+
+    async submitResource() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      this.draftErrors = { file: '', title: '', subject: '', years: '', owner: '' };
+      this.uploadMessage = '';
+      if (!this.draftFile) this.draftErrors.file = 'Choose a file to publish.';
+      if (!this.draft.title.trim()) this.draftErrors.title = 'Enter a clear title for students.';
+      if (!SUBJECTS.includes(this.draft.subject)) this.draftErrors.subject = 'Choose one of the listed subjects.';
+      if (!VALID_YEAR_LEVELS.has(String(this.draft.years))) this.draftErrors.years = 'Choose a year level from 9 to 12.';
+      if (!this.draft.owner.trim()) this.draftErrors.owner = 'Enter the resource owner or department contact.';
+      if (this.draft.description.length > MAX_DESCRIPTION_LENGTH) {
+        this.uploadMessage = 'The description must be 3,000 characters or fewer.';
+        this.uploadMessageTone = 'error';
+      }
+      const invalid = Object.values(this.draftErrors).some(Boolean) || Boolean(this.uploadMessage);
+      if (invalid) return;
+      if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
+        this.uploadMessage = 'Connect a GitHub Personal Access Token in Settings first. It needs Contents: Read and write access to this repository.';
+        this.uploadMessageTone = 'error';
+        return;
+      }
+      if (!this.draftFile || this.draftFile.size > SITE_CONFIG.maxUploadBytes) {
+        this.draftErrors.file = 'Files must be 50 MB or smaller.';
+        return;
+      }
+
+      this.submitting = true;
+      this.uploadMessage = '';
+      const keywords = String(this.draft.keywords || '').split(',').map(value => value.trim()).filter(Boolean);
+      const metadata = {
+        title: this.draft.title.trim(),
+        description: this.draft.description.trim(),
+        topic: this.draft.topic.trim(),
+        subject: this.draft.subject,
+        years: [Number(this.draft.years)],
+        tags: keywords,
+        keywords,
+        owner: this.draft.owner.trim(),
+        department: this.draft.department.trim(),
+        academicYear: this.draft.academicYear.trim(),
+        resourceType: this.draft.resourceType,
+        language: this.draft.language,
+        visibility: this.draft.visibility,
+        version: this.draft.version.trim(),
+        reviewDate: this.draft.reviewDate,
+        licence: this.draft.licence,
+        accessibility: this.draft.accessibility.trim(),
+        addedAt: new Date().toISOString()
+      };
+      const target = this.repositoryTarget;
+      try {
+        const result = await uploadResourceToGitHub({
+          owner: target.owner,
+          repo: target.name,
+          branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
+          token: this.githubAuth.activeToken,
+          file: this.draftFile,
+          metadata
+        });
+        const item = normalizeLibraryEntry({
+          type: 'file', name: result.name, path: result.path,
+          download_url: result.downloadUrl, size: this.draftFile.size
+        }, metadata);
+        if (item && !this.libraryItems.some(existing => existing.id === item.id)) {
+          item.counterKey = downloadCounterKey(item.path);
+          this.libraryItems = [...this.libraryItems, item];
+          this.stats.downloads[item.id] = 0;
+        }
+        this.notify('Published to GitHub. The site will show the file everywhere after GitHub Pages finishes deploying.', 'success');
+        this.resetDraft();
+        this.currentView = 'library';
+        this.updateIntegrityReport();
+        this.refreshIcons();
+        // Jekyll regenerates apps.json during the Pages build; re-read after a
+        // short delay so the current browser converges to the published list.
+        window.setTimeout(() => this.loadLibrary(), 15_000);
+      } catch (error) {
+        this.uploadMessageTone = 'error';
+        this.uploadMessage = error.uploadedPath
+          ? `The file was uploaded to ${error.uploadedPath}, but library metadata could not be updated: ${error.message}`
+          : (error.message || 'The upload failed. Check the connection and retry.');
+      } finally {
+        this.submitting = false;
+      }
+    },
+    resetDraft() {
+      if (this.draftFilePreview?.src?.startsWith('blob:')) URL.revokeObjectURL(this.draftFilePreview.src);
+      this.draft = emptyDraft();
+      this.draftFile = null;
+      this.draftFilePreview = null;
+      this.draftErrors = { file: '', title: '', subject: '', years: '', owner: '' };
+      const input = document.getElementById('resource-file');
+      if (input) input.value = '';
+    },
+
+    async saveSettings() {
+      const target = parseRepoName(this.githubConfig.repo, '', '');
+      if (!target.owner || !target.name) {
+        this.notify('Enter the repository as owner/name, for example Petgabs/HSC.', 'error');
+        return;
+      }
+      this.githubConfig.repo = `${target.owner}/${target.name}`;
+      this.githubConfig.branch = this.githubConfig.branch || SITE_CONFIG.repository.branch;
+      try { localStorage.setItem('schoolcloud.repository', this.githubConfig.repo); } catch { /* Browser-only convenience. */ }
+      await this.loadLibrary();
+      this.notify('Repository settings saved and the published library refreshed.', this.errors.library ? 'error' : 'success');
+    },
+    async connectGithub() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      this.githubAuth.error = '';
+      const token = String(this.githubAuth.token || '').trim();
+      if (!token) {
+        this.githubAuth.error = 'Paste the new fine-grained GitHub token first.';
+        return;
+      }
+      this.githubAuth.verifying = true;
+      try {
+        const target = this.repositoryTarget;
+        const result = await verifyGitHubToken({ token, owner: target.owner, repo: target.name });
+        this.githubAuth.activeToken = token;
+        this.githubAuth.token = '';
+        this.githubAuth.connected = true;
+        this.githubAuth.login = result.login;
+        this.githubAuth.error = '';
+        this.notify(`Connected to ${result.repository}. The token is held only in memory in this tab.`, 'success');
+      } catch (error) {
+        this.githubAuth.error = error?.message || 'The token could not be verified.';
+        this.githubAuth.activeToken = '';
+        this.githubAuth.connected = false;
+      } finally {
+        this.githubAuth.verifying = false;
+        this.refreshIcons();
+      }
+    },
+    disconnectGithub() {
+      this.githubAuth.token = '';
+      this.githubAuth.activeToken = '';
+      this.githubAuth.connected = false;
+      this.githubAuth.login = '';
+      this.githubAuth.error = '';
+      this.notify('The GitHub token has been cleared from this tab.', 'success');
+    },
+    toggleGithubToken() { this.githubAuth.showToken = !this.githubAuth.showToken; },
+    githubUploadUrl() {
+      const target = this.repositoryTarget;
+      return `https://github.com/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.name)}/new/${encodeURIComponent(this.githubConfig.branch || 'main')}?filename=apps/`;
+    },
+    githubTokenUrl() { return 'https://github.com/settings/personal-access-tokens'; },
+
+    setDashboardResourceType(type) { this.dashboardResourceType = type; },
+    setStatsAgeBucket(bucket) { this.statsAgeBucketOpen = this.statsAgeBucketOpen === bucket ? '' : bucket; },
+    deleteCloudResourceById(id) {
+      const item = this.apps.find(resource => resource.id === id);
+      if (item) this.confirmDeleteApp(item);
+    },
+    openResourceInLibrary(item) {
+      this.currentView = 'library';
+      this.filters.query = item?.fileName || item?.name || '';
+      document.getElementById('library-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+
+    async refreshCloudQueue() {
+      this.cloudQueue.loading = true;
+      this.cloudQueue.error = '';
+      this.submissionRecords = [];
+      this.cloudQueue.available = false;
+      this.cloudQueue.loadedAt = new Date().toISOString();
+      this.cloudQueue.loading = false;
+      this.notify('Teacher sign-in and new teacher submissions have been removed. Admin uploads publish directly from the Upload Resource page.', 'info');
+    },
+    openSubmissionPreview(record) {
+      const item = this.apps.find(entry => entry.path === record?.path || entry.fileName === record?.fileName);
+      if (item) this.openPreview(item);
+    },
+    downloadSubmission(record) {
+      const item = this.apps.find(entry => entry.path === record?.path || entry.fileName === record?.fileName);
+      if (item) this.downloadApp(item);
+    },
+    approveSubmission() { this.notify('New teacher submissions are no longer accepted. Use Upload Resource to publish directly.', 'info'); },
+    declineSubmission() { this.notify('Teacher submissions are no longer accepted.', 'info'); },
+    viewInLibrary(record) { this.openResourceInLibrary(record); },
+    publishSubmissionToGithub() { this.notify('Use the direct admin upload page to publish files to GitHub.', 'info'); },
+    copySubmissionMetadata(record) { clipboardWrite(JSON.stringify(record || {}, null, 2)).then(() => this.notify('Metadata copied.', 'success')).catch(() => this.notify('Could not copy metadata.', 'error')); },
+    markPublished() { this.notify('Legacy submission records are read-only. Publish resources directly from Upload Resource.', 'info'); },
+    deleteSubmission() { this.notify('Legacy submission records are not changed by this version.', 'info'); },
+    submissionStatusLabel(status) { return status === 'approved' ? 'Approved' : status === 'rejected' ? 'Declined' : 'Pending'; },
+    submissionStatusAccent(status) { return status === 'approved' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : status === 'rejected' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'; },
+
+    updateIntegrityReport() {
+      const issues = [];
+      if (this.errors.library) issues.push({ id: 'library-load', title: 'Library could not be loaded', detail: this.errors.library, action: 'Retry the library load.', severity: 'error' });
+      const staleMetadata = this.metadataEntries > this.apps.length;
+      if (staleMetadata) issues.push({ id: 'metadata-extra', title: 'Some metadata entries do not match published files', detail: 'Review library.json against the files currently in apps/.', action: 'Check library.json in GitHub.', severity: 'warning' });
+      this.integrityReport = {
+        status: issues.some(issue => issue.severity === 'error') ? 'error' : issues.length ? 'warning' : 'ok',
+        statusLabel: issues.some(issue => issue.severity === 'error') ? 'Check needed' : issues.length ? 'Review suggested' : 'Library healthy',
+        issues,
+        counts: {
+          publishedFiles: this.apps.length,
+          metadataEntries: this.metadataEntries,
+          queueEntries: this.submissionRecords.length,
+          errors: issues.filter(issue => issue.severity === 'error').length,
+          warnings: issues.filter(issue => issue.severity === 'warning').length
+        }
+      };
+    },
+    async runIntegrityTroubleshooter() {
+      this.integrityUi.running = true;
+      this.integrityUi.troubleshooterOpen = true;
+      this.integrityUi.log = [];
+      await sleep(50);
+      const findings = [];
+      if (this.errors.library) findings.push({
+        id: 'library-load', label: 'Published library could not be loaded', count: 1,
+        state: 'failed', autoFixable: false,
+        cause: this.offline ? 'This device is offline.' : this.errors.library,
+        remedy: 'Reconnect and use Retry, then reload the library.'
+      });
+      if (this.metadataEntries > this.apps.length) findings.push({
+        id: 'stale-metadata', label: 'Extra metadata entries', count: this.metadataEntries - this.apps.length,
+        state: 'warning', autoFixable: false,
+        cause: 'library.json includes keys which are not in the live apps/ file list.',
+        remedy: 'Review library.json in GitHub; this browser does not silently rewrite repository data.'
+      });
+      if (!this.githubAuth.connected) findings.push({
+        id: 'github-disconnected', label: 'Repository write access is not connected', count: 1,
+        state: 'info', autoFixable: false,
+        cause: 'No GitHub token is held in this tab.',
+        remedy: 'Paste the replacement token in Settings when ready.'
+      });
+      this.integrityDiagnosis = {
+        headline: findings.length ? `${findings.length} item(s) need attention` : 'The published library looks consistent.',
+        findings,
+        autoFixable: 0,
+        manualOnly: findings.filter(item => !item.autoFixable).length,
+        canRepair: false
+      };
+      this.integrityUi.ranAt = new Date().toISOString();
+      this.integrityUi.summary = findings.length ? 'No repository changes were made.' : 'No problems found.';
+      this.integrityUi.running = false;
+      this.refreshIcons();
+    },
+    async repairIntegrityIssues() {
+      this.integrityUi.log = [{ state: 'info', message: 'No safe automatic repairs are available. Review the findings and make any repository edits explicitly.' }];
+      this.notify('No automatic repair was applied; repository files are left unchanged.', 'info');
+    },
+    async copyIntegrityReport() { await this.copyText(JSON.stringify(this.integrityReport, null, 2), 'Integrity report copied.'); },
+    async copyIntegrityDiagnosis() { await this.copyText(JSON.stringify(this.integrityDiagnosis || {}, null, 2), 'Troubleshooter report copied.'); },
+    closeIntegrityTroubleshooter() { this.integrityUi.troubleshooterOpen = false; },
+    restoreIntegrityIssues() { this._dismissedIntegrityIssueIds = []; this.integrityUi.hideIssues = false; },
+    toggleIntegrityIssues() { this.integrityUi.hideIssues = !this.integrityUi.hideIssues; },
+    dismissIntegrityIssue(issue) { if (issue?.id && !this._dismissedIntegrityIssueIds.includes(issue.id)) this._dismissedIntegrityIssueIds.push(issue.id); },
+    integrityFindingClass(finding) { return finding?.state === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-900' : finding?.state === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-slate-200 bg-white text-slate-800'; },
+    integrityIssueClass(issue) { return issue?.severity === 'error' ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'; },
+    async copyText(value, successMessage) {
+      try { await clipboardWrite(value); this.notify(successMessage, 'success'); }
+      catch { this.notify('Could not copy to clipboard. Select and copy the text manually.', 'error'); }
+    },
+
+    async clearLocalDrafts() {
+      this.localDrafts = [];
+      this.notify('Browser-only draft files were cleared.', 'success');
+    },
+    async clearGithubCache() {
+      try {
+        const names = await caches.keys();
+        await Promise.all(names.filter(name => name.startsWith('schoolcloud-data-') || name.startsWith('schoolcloud-files-')).map(name => caches.delete(name)));
+      } catch { /* Cache API may be unavailable. */ }
+      await this.loadLibrary();
+      this.notify('The local cloud-file cache was cleared.', 'success');
+    },
+    async clearData() {
+      if (!window.confirm('Clear School Cloud settings and cached data from this browser? GitHub files will not be deleted.')) return;
+      try {
+        for (const key of Object.keys(localStorage)) if (key.startsWith('schoolcloud.')) localStorage.removeItem(key);
+      } catch { /* Ignore locked-down storage. */ }
+      this.disconnectGithub();
+      this.filters = { query: '', kind: '', subject: '', year: '', sort: 'newest' };
+      await this.loadLibrary();
+      this.notify('Local settings and counters were cleared. GitHub files remain unchanged.', 'success');
+    },
+
+    closePreview() {
+      this.preview.open = false;
+      this.loading.preview = false;
+      this.errors.preview = '';
+      this.preview.item = null;
+      this.preview.descriptor = null;
+      if (this.preview.objectUrl) URL.revokeObjectURL(this.preview.objectUrl);
+      this.preview.objectUrl = '';
+    },
+    onPreviewLoad() { this.loading.preview = false; this.errors.preview = ''; },
+    onPreviewError() { this.loading.preview = false; this.errors.preview = 'The file preview could not be shown. Download the file instead.'; },
+    notify(message, tone = 'info') {
+      clearTimeout(this._toastTimer);
+      this.toast = { message: String(message || ''), tone, visible: Boolean(message) };
+      this._toastTimer = setTimeout(() => { this.toast.visible = false; }, 6500);
+    }
+  };
+}
+
+// Register the data provider before Alpine scans the markup. Importing
+// Alpine's ESM build avoids the CDN build's eager auto-start race and gives us
+// a predictable bootstrap order; no credentials or access tokens are global.
+Alpine.data('schoolCloud', schoolCloud);
+window.Alpine = Alpine;
+Alpine.start();
+
+window.addEventListener('unhandledrejection', event => {
+  if (event.reason?.name === 'AbortError') return;
+  console.error('[School Cloud] Unhandled promise:', event.reason);
+});
