@@ -19,8 +19,11 @@ describe('School Cloud release configuration', () => {
       read('../assets/js/config.js'), read('../index.html'), read('../_headers')
     ]);
     expect(config).toContain("baseUrl: 'https://abacus.jasoncameron.dev'");
-    expect(config).toContain("username: ''");
-    expect(config).toContain("passwordHash: ''");
+    // The admin gate ships a username, a salt and a SHA-256 digest only — never a plain password.
+    expect(config).toMatch(/username:\s*'hsc-admin'/);
+    expect(config).toMatch(/salt:\s*'[0-9a-f]{16,}'/);
+    expect(config).toMatch(/passwordHash:\s*'[0-9a-f]{64}'/);
+    expect(config).not.toMatch(/\bpassword\s*:\s*'/i);
     expect(config).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
     expect(html).toContain('https://abacus.jasoncameron.dev');
     expect(html).not.toContain('supabase.co');
