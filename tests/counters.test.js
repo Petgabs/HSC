@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AbacusCounters, downloadCounterKey, readLocalCounter, writeLocalCounter } from '../assets/js/lib/counters.js';
+import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, readLocalCounter, writeLocalCounter } from '../assets/js/lib/counters.js';
 
 describe('Abacus counters', () => {
   beforeEach(() => vi.restoreAllMocks());
@@ -9,6 +9,23 @@ describe('Abacus counters', () => {
     expect(key).toMatch(/^download-[a-f0-9]{8}$/);
     expect(downloadCounterKey('apps/Year 12 algebra.pdf')).toBe(key);
     expect(downloadCounterKey('apps/Year 12 calculus.pdf')).not.toBe(key);
+  });
+
+  it('claims a visitor increment once per browser session', () => {
+    const values = new Map();
+    const storage = {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value)
+    };
+
+    expect(claimSessionCounterHit('petgabs-hsc-schoolcloud:visitors', storage)).toBe(true);
+    expect(claimSessionCounterHit('petgabs-hsc-schoolcloud:visitors', storage)).toBe(false);
+    expect(values.get('schoolcloud.session-counter.petgabs-hsc-schoolcloud:visitors')).toBe('1');
+  });
+
+  it('reports an unavailable session store so callers can deduplicate in memory', () => {
+    const storage = { getItem: () => { throw new Error('storage disabled'); }, setItem: vi.fn() };
+    expect(claimSessionCounterHit('visitors', storage)).toBeNull();
   });
 
   it('uses Abacus get for reads and hit only for increments', async () => {

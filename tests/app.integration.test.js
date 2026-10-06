@@ -39,8 +39,8 @@ describe('School Cloud page integration', () => {
       const url = String(input);
       if (url.includes('apps.json')) return jsonResponse(manifest);
       if (url.includes('library.json')) return jsonResponse(library);
-      if (url.includes('/hit/')) return jsonResponse({ value: 41 });
-      if (url.includes('/get/')) return jsonResponse({ value: url.includes('download-') ? 7 : 0 });
+      if (url.includes('/hit/')) return jsonResponse({ value: url.includes('download-') ? 8 : 41 });
+      if (url.includes('/get/')) return jsonResponse({ value: url.includes('download-') ? 7 : 41 });
       return jsonResponse([]);
     });
     for (const [key, value] of Object.entries({
@@ -81,9 +81,21 @@ describe('School Cloud page integration', () => {
       expect(window.localStorage.getItem('githubToken')).toBeNull();
       expect(window.sessionStorage.getItem('schoolcloud.githubToken')).toBeNull();
       expect(errors.filter(message => /ReferenceError|TypeError|Alpine Expression Error/.test(message))).toEqual([]);
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/hit/'))).toBe(true);
-      expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/get/'))).toHaveLength(2);
+      const visitorHits = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/hit/petgabs-hsc-schoolcloud/visitors'));
+      const visitorReads = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/get/petgabs-hsc-schoolcloud/visitors'));
+      const fileReads = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/get/') && String(url).includes('download-'));
+      expect(visitorHits()).toHaveLength(1);
+      expect(fileReads()).toHaveLength(2);
+
+      // Re-reading the page's visitor statistic must use Abacus GET, not a hit.
+      await state.countVisitor();
+      expect(visitorHits()).toHaveLength(1);
+      expect(visitorReads()).toHaveLength(1);
+      expect(state.stats.visitors).toBe(41);
     } finally {
+      // Allow Alpine's x-transition cleanup timers to settle before JSDOM tears
+      // down the globals used by its MutationObserver callbacks.
+      await new Promise(resolve => setTimeout(resolve, 200));
       window.Alpine?.destroyTree?.(window.document.body);
       window.close();
     }
@@ -148,6 +160,8 @@ describe('School Cloud page integration', () => {
       await new Promise(resolve => setTimeout(resolve, 200));
       const state = window.document.body._x_dataStack?.[0];
       const getCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/get/'));
+      const fileGetCalls = () => getCalls().filter(([url]) => String(url).includes('download-'));
+      const visitorGetCalls = () => getCalls().filter(([url]) => String(url).includes('/visitors'));
       expect(state?.apps).toHaveLength(2);
       expect(observers).toHaveLength(1);
       expect(observers[0].targets.size).toBe(2);
@@ -157,21 +171,30 @@ describe('School Cloud page integration', () => {
       const visibleItem = visibleCard._schoolCloudCounterItem;
       observers[0].intersect(visibleCard);
       await new Promise(resolve => setTimeout(resolve, 30));
-      expect(getCalls()).toHaveLength(1);
+      expect(fileGetCalls()).toHaveLength(1);
       expect(state.downloadsOf(visibleItem)).toBe(7);
 
       state.isAdmin = true;
       state.openDashboard();
       await new Promise(resolve => setTimeout(resolve, 50));
-      expect(getCalls()).toHaveLength(2);
+      expect(fileGetCalls()).toHaveLength(2);
       expect(state.apps.every(item => state.downloadsOf(item) === 7)).toBe(true);
+
+      // Opening the dashboard re-reads an already-seen file once its cached
+      // Abacus value is stale, not just counters that were never visible.
+      state._counterReadAt[visibleItem.id] = Date.now() - 10_001;
+      state.openDashboard();
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(fileGetCalls()).toHaveLength(3);
 
       for (const item of state.apps) state._counterReadAt[item.id] = Date.now();
       await state.refreshStats();
-      expect(getCalls()).toHaveLength(2);
+      expect(fileGetCalls()).toHaveLength(3);
+      expect(visitorGetCalls()).toHaveLength(1);
       for (const item of state.apps) state._counterReadAt[item.id] = Date.now() - 10_001;
       await state.refreshStats();
-      expect(getCalls()).toHaveLength(4);
+      expect(fileGetCalls()).toHaveLength(5);
+      expect(visitorGetCalls()).toHaveLength(2);
 
       state.downloadApp(visibleItem);
       await new Promise(resolve => setTimeout(resolve, 30));
@@ -182,6 +205,8 @@ describe('School Cloud page integration', () => {
       expect(downloadHits).toHaveLength(1);
       expect(state.downloadsOf(visibleItem)).toBe(8);
     } finally {
+      // Wait out view transitions so their deferred DOM callbacks do not outlive JSDOM.
+      await new Promise(resolve => setTimeout(resolve, 200));
       window.Alpine?.destroyTree?.(window.document.body);
       window.close();
     }

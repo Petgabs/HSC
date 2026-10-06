@@ -79,6 +79,28 @@ export class AbacusCounters {
   }
 }
 
+/**
+ * Reserve one visitor hit for the current browser tab session. A null result
+ * means session storage is unavailable; callers can then deduplicate in-memory
+ * for the lifetime of their current page.
+ */
+export function claimSessionCounterHit(key, storage) {
+  let sessionStore = storage;
+  if (sessionStore === undefined) {
+    try { sessionStore = globalThis.sessionStorage; } catch { return null; }
+  }
+  if (!sessionStore || typeof sessionStore.getItem !== 'function' || typeof sessionStore.setItem !== 'function') return null;
+
+  try {
+    const marker = `schoolcloud.session-counter.${String(key)}`;
+    if (sessionStore.getItem(marker) === '1') return false;
+    sessionStore.setItem(marker, '1');
+    return true;
+  } catch {
+    return null;
+  }
+}
+
 export function readLocalCounter(key, storage = globalThis.localStorage) {
   try {
     const value = Number(storage?.getItem(`schoolcloud.counter.${key}`));
