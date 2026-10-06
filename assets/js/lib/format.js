@@ -122,3 +122,33 @@ export function isReviewDue(value) {
   const due = Date.parse(`${value}T23:59:59`);
   return Number.isFinite(due) && due < Date.now();
 }
+
+/**
+ * Short "how long ago" wording for dashboards: "just now", "12 minutes ago",
+ * "3 hours ago", "2 days ago", and a plain date once a timestamp is more than
+ * about two weeks old. An unusable value returns '' so callers can hide the
+ * line instead of printing "Invalid Date".
+ */
+export function formatRelativeTime(value, now = Date.now()) {
+  const timestamp = typeof value === 'number' ? value : Date.parse(String(value || ''));
+  if (!Number.isFinite(timestamp)) return '';
+  const nowMs = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  const seconds = Math.round((nowMs - timestamp) / 1000);
+  if (seconds < 45) return seconds <= 5 ? 'just now' : `${seconds} seconds ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor((nowMs - timestamp) / 86_400_000);
+  if (days <= 14) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return formatDate(timestamp);
+}
+
+/** Full date and local time, e.g. "6 Oct 2026, 9:15 pm". */
+export function formatDateTime(value) {
+  const timestamp = typeof value === 'number' ? value : Date.parse(String(value || ''));
+  if (!Number.isFinite(timestamp)) return '';
+  return new Intl.DateTimeFormat('en-AU', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit'
+  }).format(new Date(timestamp));
+}

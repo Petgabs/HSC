@@ -82,6 +82,15 @@ export function normalizeLibraryEntry(file, curated = {}) {
   if (!isTrustedDownloadUrl(downloadUrl)) return null;
   const meta = inferMetadata(fileName, curated);
   const id = path.normalize('NFC').toLowerCase();
+  // The manifest Jekyll generates for GitHub Pages carries no file size, so a
+  // published file falls back to the byte count recorded in library.json at
+  // upload time. Zero means "not known here"; the dashboard resolves the real
+  // size from the GitHub API rather than pretending the file is empty.
+  const manifestSize = Number(file?.size);
+  const curatedBytes = Number(meta.bytes);
+  const size = Number.isFinite(manifestSize) && manifestSize > 0
+    ? manifestSize
+    : (Number.isFinite(curatedBytes) && curatedBytes > 0 ? curatedBytes : 0);
   return {
     id,
     name: meta.title,
@@ -89,7 +98,7 @@ export function normalizeLibraryEntry(file, curated = {}) {
     fileName,
     path,
     sha: String(file?.sha || ''),
-    size: Number(file?.size) || 0,
+    size,
     downloadUrl,
     url: downloadUrl,
     description: meta.description,

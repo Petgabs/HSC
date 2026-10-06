@@ -1,7 +1,10 @@
 import { sha256Hex } from './uploadSafety.js';
 import { TOKEN_VAULT_PATH, emptyTokenVault, isTokenVault } from './tokenVault.js';
+import {
+  ADMIN_ACTIVITY_COMMENT, ADMIN_ACTIVITY_PATH, mergeAdminActivity
+} from './adminActivity.js';
 
-export { TOKEN_VAULT_PATH };
+export { ADMIN_ACTIVITY_PATH, TOKEN_VAULT_PATH };
 
 const API_ROOT = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
@@ -983,3 +986,139 @@ export function decodeGitHubText(content) {
 export function getGitHubApiRoot() {
   return API_ROOT;
 }
+
+/**
+ * Merge this device's administrator sign-in and upload entries into
+ * `stats/admin-activity.json` in the repository.
+ *
+ * The write merges instead of replacing: the record already on GitHub, the
+ * browser's cached copy and the pending queue are combined with de-duplication
+ * by timestamp, so two administrators working at once cannot lose each other's
+ * entries and a retry cannot double-count one sign-in. The transform is
+ * bounded and sanitized by the adminActivity module.
+ */
+export async function mergeAdminActivityIntoGitHub({ owner, repo, branch = 'main', token, activity }) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Connect a GitHub token in Settings before saving administrator activity.');
+  const incoming = mergeAdminActivity(activity);
+  const now = new Date().toISOString();
+  const result = await updateJson({
+    owner, repo, branch, path: ADMIN_ACTIVITY_PATH, token: cleanToken,
+    message: `Record administrator activity (${incoming.logins.length} sign-ins, ${incoming.uploads.length} uploads)`,
+    transform(current) {
+      const merged = mergeAdminActivity(current, incoming);
+      return {
+        _comment: Array.isArray(current?._comment) && current._comment.length
+          ? current._comment
+          : ADMIN_ACTIVITY_COMMENT,
+        updatedAt: now,
+        logins: merged.logins,
+        uploads: merged.uploads
+      };
+    }
+  });
+  return {
+    path: ADMIN_ACTIVITY_PATH,
+    commitUrl: result?.commit?.html_url || '',
+    logins: incoming.logins.length,
+    uploads: incoming.uploads.length
+  };
+}
+
+const FILE_DETAIL_REQUEST_SPACING_MS = 120;
+
+function publicGitHubHeaders() {
+  return { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': API_VERSION };
+}
+
+async function publicGitHubJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      headers: publicGitHubHeaders(),
+      cache: 'no-store',
+      credentials: 'omit',
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const error = new Error(`GitHub returned HTTP ${response.status}.`);
+      error.status = response.status;
+      throw error;
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The date a published file first joined the repository, read from its commit
+ * history. `per_page=100` is enough for a school library: the oldest commit in
+ * the list is the upload that added the file.
+ */
+async function firstCommitDate({ owner, repo, branch, path }) {
+  const query = new URLSearchParams({ path, sha: branch, per_page: '100' });
+  const commits = await publicGitHubJson(apiUrl(owner, repo, `commits?${query}`));
+  if (!Array.isArray(commits) || !commits.length) return '';
+  const oldest = commits[commits.length - 1];
+  const stamp = oldest?.commit?.author?.date || oldest?.commit?.committer?.date || '';
+  const parsed = Date.parse(String(stamp || ''));
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
+}
+
+/**
+ * Resolve the two facts the dashboard cannot get from `apps.json` alone: each
+ * published file's size in bytes and the date it was added to the repository.
+ *
+ * Sizes come from one directory listing. Upload dates are only looked up for
+ * files that have no `addedAt` in `library.json`, and each file costs one
+ * public GitHub request, so the caller passes a budget (`maxDateLookups`) and
+ * may pass previously resolved dates (`knownDates`) to skip repeat lookups.
+ *
+ * Best effort by design: a blocked or rate-limited GitHub API returns whatever
+ * partly resolved, never an exception, so the dashboard still renders.
+ */
+export async function readCloudFileDetails({
+  owner, repo, branch = 'main', paths = [], knownDates = {}, maxDateLookups = 12,
+  spacingMs = FILE_DETAIL_REQUEST_SPACING_MS, wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+}) {
+  const sizes = {};
+  const addedAt = {};
+  const warnings = [];
+  let files = [];
+  try {
+    files = await readPublicRepositoryFiles({ owner, repo, branch });
+  } catch (error) {
+    warnings.push(error?.message || 'The repository file list could not be read.');
+  }
+  for (const file of files) {
+    const path = String(file?.path || '');
+    const size = Number(file?.size);
+    if (path && Number.isFinite(size) && size > 0) sizes[path] = size;
+  }
+
+  const wanted = [...new Set((Array.isArray(paths) ? paths : []).filter(path => /^apps\/[^/]+$/.test(String(path || ''))))];
+  const known = knownDates && typeof knownDates === 'object' ? knownDates : {};
+  const budget = Math.max(0, Math.min(wanted.length, Number(maxDateLookups) || 0));
+  let used = 0;
+  for (const path of wanted) {
+    const cached = String(known[path] || '');
+    if (Number.isFinite(Date.parse(cached))) {
+      addedAt[path] = new Date(Date.parse(cached)).toISOString();
+      continue;
+    }
+    if (used >= budget) continue;
+    if (used > 0 && spacingMs > 0) await wait(spacingMs);
+    used += 1;
+    try {
+      const stamp = await firstCommitDate({ owner, repo, branch, path });
+      if (stamp) addedAt[path] = stamp;
+    } catch (error) {
+      warnings.push(`Upload date for ${path.split('/').pop()} could not be read: ${error?.message || 'unknown error'}`);
+    }
+  }
+
+  return { sizes, addedAt, files: files.length, dateLookups: used, warnings };
+}
+

@@ -5,11 +5,17 @@ import {
 } from './config.js';
 import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from './lib/counters.js';
 import {
-  clearTokenVaultOnGitHub, deleteResourceFromGitHub, readPublicRepositoryFiles,
-  readTokenVaultFromGitHub, removeDownloadStatsForPath, saveAdminCredentialsToGitHub,
-  saveDownloadStatsToGitHub, savePublishingTokenToGitHub, saveTokenVaultToGitHub,
-  uploadResourceToGitHub, verifyGitHubToken
+  clearTokenVaultOnGitHub, deleteResourceFromGitHub, mergeAdminActivityIntoGitHub,
+  readCloudFileDetails, readPublicRepositoryFiles, readTokenVaultFromGitHub,
+  removeDownloadStatsForPath, saveAdminCredentialsToGitHub, saveDownloadStatsToGitHub,
+  savePublishingTokenToGitHub, saveTokenVaultToGitHub, uploadResourceToGitHub, verifyGitHubToken
 } from './lib/githubPublish.js';
+import {
+  ADMIN_ACTIVITY_PATH, ADMIN_ACTIVITY_SERIES_DAYS, activityEntryKey, adminLoginStatistics,
+  emptyAdminActivity, formatStoredDays, mergeAdminActivity, normalizeAdminActivity,
+  normalizeLoginEntry, normalizeUploadEntry, recentAdminLogins, recentAdminUploads,
+  storageSummary, storedDays, withAdminLogin, withAdminUpload
+} from './lib/adminActivity.js';
 import {
   TOKEN_VAULT_PATH, TOKEN_VAULT_SLOT_LABELS, createTokenVault, describeTokenVault,
   isTokenVault, openTokenVault, tokenVaultSlotIsStale, tokenVaultSlots
@@ -17,9 +23,9 @@ import {
 import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
 import { searchResources, sortResources } from './lib/search.js';
 import {
-  fileExtension, fileIcon, formatBytes, formatCount, formatDate, formatDownloadCount,
-  formatYears, freshness, isReviewDue, kindLabel, subjectAccent, visibilityAccent,
-  visibilityLabel
+  fileExtension, fileIcon, formatBytes, formatCount, formatDate, formatDateTime,
+  formatDownloadCount, formatRelativeTime, formatYears, freshness, isReviewDue,
+  kindLabel, subjectAccent, visibilityAccent, visibilityLabel
 } from './lib/format.js';
 import { canPreviewItem, previewDescriptor } from './lib/preview.js';
 import { ADMIN_ACTION_LIMITS, RateLimiter, createExclusiveRunner, formatRetryAfter } from './lib/guard.js';
@@ -55,6 +61,16 @@ const STORE_TOKEN_ON_WEBSITE_KEY = 'schoolcloud.github.token.website.v1';
 const SAVED_ADMIN_CREDENTIALS_KEY = 'schoolcloud.admin.credentials.v1';
 const LIBRARY_CACHE_STORAGE_KEY = 'schoolcloud.library.snapshot.v1';
 const LIBRARY_CACHE_VERSION = 1;
+// Administrator sign-ins and uploads are recorded in the repository so they
+// appear on every computer. The same-device copies below keep the dashboard
+// accurate instantly, survive a reload, and hold entries that could not be
+// written yet (for example while the publishing token is still locked).
+const ADMIN_ACTIVITY_STORAGE_KEY = 'schoolcloud.admin.activity.v1';
+const ADMIN_ACTIVITY_PENDING_KEY = 'schoolcloud.admin.activity.pending.v1';
+// Upload dates resolved from GitHub's commit history are cached so the API is
+// asked once per file, not on every dashboard visit.
+const CLOUD_FILE_DATES_STORAGE_KEY = 'schoolcloud.cloud.file-dates.v1';
+const CLOUD_FILE_DATE_LOOKUP_BUDGET = 12;
 const VALID_YEAR_LEVELS = new Set(YEAR_LEVELS.map(String));
 const MAX_DESCRIPTION_LENGTH = 3000;
 const MIN_PASSWORD_LENGTH = 8;
@@ -319,6 +335,17 @@ function schoolCloud() {
     },
     downloadStatsRecord: null,
     statsSyncing: false,
+    // Administrator sign-in and upload history, plus the cloud-storage facts
+    // (size and age of every published file) the dashboard reports.
+    adminActivity: emptyAdminActivity(),
+    adminActivityStatus: {
+      loading: true, syncing: false, source: 'local', error: '',
+      githubUpdatedAt: '', pendingCount: 0
+    },
+    cloudDetails: { refreshing: false, refreshedAt: '', message: '', error: '' },
+    storageQuotaBytes: Math.max(0, Number(SITE_CONFIG.storage?.quotaBytes) || 0),
+    storageQuotaLabel: SITE_CONFIG.storage?.label || 'Cloud allowance',
+    storageQuotaNote: SITE_CONFIG.storage?.note || '',
     githubConfig: {
       repo: `${SITE_CONFIG.repository.owner}/${SITE_CONFIG.repository.name}`,
       branch: SITE_CONFIG.repository.branch
@@ -617,15 +644,169 @@ function schoolCloud() {
       if (type === 'cloud') result = result.filter(item => item.source === 'github');
       return sortResources(result, 'title');
     },
+    /**
+     * Cloud storage measured against the hosting allowance: total size used by
+     * every published file, the space still available, the allowance itself
+     * and how full it is. `totalBytes`/`knownCount`/`unknownCount` keep their
+     * original names for the existing cards.
+     */
     get cloudStorageStatistics() {
       const files = this.apps.filter(item => item.source === 'github');
-      const known = files.filter(item => item.size > 0);
+      const summary = storageSummary({
+        items: files,
+        quotaBytes: this.storageQuotaBytes,
+        downloadsOf: item => this.downloadsOf(item)
+      });
+      const tone = summary.overQuota ? 'over' : summary.percentUsed >= 90 ? 'high' : summary.percentUsed >= 70 ? 'medium' : 'low';
       return {
-        totalBytes: known.reduce((sum, item) => sum + item.size, 0),
-        totalCount: files.length,
-        knownCount: known.length,
-        unknownCount: files.length - known.length
+        ...summary,
+        totalBytes: summary.usedBytes,
+        totalCount: summary.fileCount,
+        knownCount: summary.knownSizeCount,
+        unknownCount: summary.unknownSizeCount,
+        usedLabel: formatBytes(summary.usedBytes) || '0 B',
+        availableLabel: summary.hasQuota ? (formatBytes(summary.availableBytes) || '0 B') : 'Unknown',
+        quotaLabel: summary.hasQuota ? (formatBytes(summary.quotaBytes) || '0 B') : 'Not configured',
+        usedDetail: `${summary.knownSizeCount} of ${summary.fileCount} file${summary.fileCount === 1 ? '' : 's'} measured`,
+        percentLabel: summary.hasQuota ? `${summary.percentUsed}% of ${this.storageQuotaLabel} used` : 'No allowance configured',
+        tone
       };
+    },
+    get averageFileSizeLabel() {
+      const stats = this.cloudStorageStatistics;
+      if (!stats.fileCount) return 'No files stored yet';
+      if (!stats.averageBytes) return 'No size recorded yet';
+      return `Average file size ${formatBytes(stats.averageBytes)}`;
+    },
+    get cloudStorageBarClass() {
+      const tone = this.cloudStorageStatistics.tone;
+      if (tone === 'over' || tone === 'high') return 'bg-rose-500';
+      if (tone === 'medium') return 'bg-amber-500';
+      return 'bg-emerald-500';
+    },
+    get cloudStorageStatusClass() {
+      const tone = this.cloudStorageStatistics.tone;
+      if (tone === 'over' || tone === 'high') return 'bg-rose-50 text-rose-700 ring-rose-200';
+      if (tone === 'medium') return 'bg-amber-50 text-amber-800 ring-amber-200';
+      return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+    },
+    get cloudStorageStatusLabel() {
+      const stats = this.cloudStorageStatistics;
+      if (!stats.hasQuota) return 'Allowance not configured';
+      if (stats.overQuota) return 'Over the allowance';
+      if (stats.tone === 'high') return 'Almost full';
+      if (stats.tone === 'medium') return 'Filling up';
+      return 'Plenty of room';
+    },
+    /** Per-file size and storage age, largest first — the cloud inventory. */
+    get cloudFileInventory() { return this.cloudStorageStatistics.files; },
+    get cloudStorageOldestLabel() {
+      const file = this.cloudStorageStatistics.oldestFile;
+      if (!file) return 'No published file has a recorded upload date yet.';
+      return `Longest-stored file: ${file.name} — ${file.storedLabel}.`;
+    },
+    /** Whole days a single resource has been in the cloud (null when unknown). */
+    storedAgeDays(item) { return storedDays(item?.addedAt || item?.meta?.addedAt); },
+    storedAgeLabel(item) { return formatStoredDays(this.storedAgeDays(item)); },
+    /** Compact storage age for table cells: "Today", "12 days", "Unknown". */
+    storedAgeShort(item) {
+      const days = this.storedAgeDays(item);
+      if (days === null) return 'Unknown';
+      if (days === 0) return 'Today';
+      return `${days} day${days === 1 ? '' : 's'}`;
+    },
+    storedAgeTitle(item) {
+      const addedAt = item?.addedAt || item?.meta?.addedAt || '';
+      const when = addedAt ? formatDateTime(addedAt) : '';
+      if (!when) return 'No upload date is recorded for this file yet. Use “Refresh file details” to read it from the repository history.';
+      return `Uploaded ${when} — stored in the GitHub cloud since then.`;
+    },
+    sizeLabel(item) {
+      const bytes = Number(item?.size) || 0;
+      if (bytes > 0) return formatBytes(bytes);
+      return this.cloudDetails.refreshing ? 'Checking…' : 'Size unknown';
+    },
+    /* ---------------------------------------------------------------------
+     * Administrator sign-ins and uploads
+     *
+     * The record lives in stats/admin-activity.json, so "how many sign-ins
+     * today, this week and this month" and "the latest sign-in" are the same
+     * numbers on every computer that opens this dashboard.
+     * ------------------------------------------------------------------- */
+    get adminLoginStats() {
+      return adminLoginStatistics(this.adminActivity, Date.now(), { seriesDays: ADMIN_ACTIVITY_SERIES_DAYS });
+    },
+    get latestAdminLogin() {
+      const stats = this.adminLoginStats;
+      if (!stats.lastLoginAt) return null;
+      return {
+        at: stats.lastLoginAt,
+        user: stats.lastLoginUser || 'Administrator',
+        when: formatDateTime(stats.lastLoginAt),
+        relative: formatRelativeTime(stats.lastLoginAt) || formatDate(stats.lastLoginAt)
+      };
+    },
+    get adminLoginSeriesMax() {
+      return this.adminLoginStats.perDay.reduce((best, day) => Math.max(best, day.count), 0);
+    },
+    /** Bar height in percent (a zero-count day still shows a thin baseline). */
+    loginBarHeight(day) {
+      const max = this.adminLoginSeriesMax;
+      if (!max) return 4;
+      return Math.max(4, Math.round((Number(day?.count) || 0) / max * 100));
+    },
+    get recentAdminLogins() { return recentAdminLogins(this.adminActivity, 6); },
+    get recentAdminUploads() {
+      // A fresh installation has no log yet, so the library's own upload dates
+      // stand in until the first publish is recorded here.
+      const logged = recentAdminUploads(this.adminActivity, 8);
+      const entries = logged.length ? logged : [...this.apps]
+        .filter(item => item.addedAt || item.meta?.addedAt)
+        .sort((left, right) => Date.parse(right.addedAt || right.meta?.addedAt) - Date.parse(left.addedAt || left.meta?.addedAt))
+        .slice(0, 8)
+        .map(item => ({
+          at: item.addedAt || item.meta?.addedAt,
+          path: item.path,
+          name: item.fileName,
+          title: item.name,
+          bytes: Number(item.size) || 0,
+          subject: item.meta?.subject || '',
+          years: item.meta?.years || [],
+          owner: item.meta?.owner || ''
+        }));
+      return entries.map(entry => {
+        const item = this.apps.find(app => app.path.toLowerCase() === entry.path.toLowerCase());
+        const days = storedDays(entry.at);
+        return {
+          ...entry,
+          sizeLabel: formatBytes(entry.bytes) || 'Size unknown',
+          when: formatRelativeTime(entry.at) || formatDate(entry.at),
+          exactWhen: formatDateTime(entry.at),
+          storedLabel: days === null ? 'In the cloud' : formatStoredDays(days),
+          presentInLibrary: Boolean(item),
+          downloads: item ? this.downloadsOf(item) : 0
+        };
+      });
+    },
+    /** Published files that still need a size or an upload date resolved. */
+    get cloudDetailsMissingCount() {
+      return this.apps.filter(item => item.source === 'github' && (!(item.size > 0) || !(item.addedAt || item.meta?.addedAt))).length;
+    },
+    get adminActivityPendingLabel() {
+      const pending = Number(this.adminActivityStatus.pendingCount) || 0;
+      if (!pending) return '';
+      return `${pending} entr${pending === 1 ? 'y' : 'ies'} waiting to be saved to the repository`;
+    },
+    get adminActivitySourceLabel() {
+      const status = this.adminActivityStatus;
+      if (status.loading) return 'Loading the administrator activity record…';
+      if (status.error) return status.error;
+      if (status.source === 'github') {
+        const when = status.githubUpdatedAt ? formatRelativeTime(status.githubUpdatedAt) : '';
+        return `Shared record from ${ADMIN_ACTIVITY_PATH}${when ? ` — last written ${when}` : ''}.`;
+      }
+      if (status.source === 'cache') return 'Showing the copy saved on this device. The shared copy refreshes when GitHub is reachable.';
+      return 'Showing the sign-in and upload activity recorded on this device. Connect publishing to share it with every computer.';
     },
     get yearLevelStatistics() {
       const counts = Object.fromEntries(YEAR_LEVELS.map(year => [year, 0]));
@@ -775,6 +956,16 @@ function schoolCloud() {
       this.$watch('currentView', (view, previous) => {
         if (previous === 'settings' && view !== 'settings') this.lockAdminAccount();
       });
+      // Sign-ins recorded while the token was locked are shared the moment
+      // publishing reconnects, on any path (remembered token, website vault or
+      // a freshly pasted one).
+      const sharePendingAdminActivity = () => this.syncAdminActivityToGitHub({ silent: true });
+      this.$watch('githubAuth.connected', connected => {
+        if (connected) sharePendingAdminActivity();
+      });
+      this.$watch('githubAuth.activeToken', token => {
+        if (token) sharePendingAdminActivity();
+      });
       this.clearLegacyTokens();
       this.githubAuth.storeOnWebsite = this.readWebsiteTokenPreference();
       this.loadSavedRepoSettings();
@@ -791,6 +982,9 @@ function schoolCloud() {
       window.addEventListener('online', () => { this.offline = false; this.loadLibrary(); });
       window.addEventListener('offline', () => { this.offline = true; });
       this.readSharedFilters();
+      // Sign-ins and uploads recorded on this device load before the library,
+      // so the dashboard has numbers the moment it opens.
+      this.hydrateAdminActivity();
       const cachedLibrary = this.readCachedLibrarySnapshot();
       if (cachedLibrary) this.applyLibrarySnapshot(cachedLibrary, { fromCache: true });
       this.refreshIcons();
@@ -1305,14 +1499,17 @@ function schoolCloud() {
           let manifest = null;
           let library = {};
           let stats = null;
-          const [manifestResult, metadataResult, statsResult] = await Promise.allSettled([
+          let activity = null;
+          const [manifestResult, metadataResult, statsResult, activityResult] = await Promise.allSettled([
             this.fetchJson(`./apps.json?v=${Date.now()}`),
             this.fetchJson(`./library.json?v=${Date.now()}`),
-            this.fetchJson(`./stats/downloads.json?v=${Date.now()}`)
+            this.fetchJson(`./stats/downloads.json?v=${Date.now()}`),
+            this.fetchJson(`./${ADMIN_ACTIVITY_PATH}?v=${Date.now()}`, { retries: 0 })
           ]);
           if (manifestResult.status === 'fulfilled' && Array.isArray(manifestResult.value)) manifest = manifestResult.value;
           if (metadataResult.status === 'fulfilled') library = metadataResult.value || {};
           if (statsResult.status === 'fulfilled' && statsResult.value && typeof statsResult.value === 'object') stats = statsResult.value;
+          if (activityResult.status === 'fulfilled' && activityResult.value && typeof activityResult.value === 'object') activity = activityResult.value;
 
           if (!manifest) {
             const target = this.repositoryTarget;
@@ -1330,6 +1527,16 @@ function schoolCloud() {
           this.applyLibrarySnapshot(snapshot, { fromCache: false, sequence });
           this.saveCachedLibrarySnapshot(snapshot);
           this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+          if (activity) {
+            this.absorbAdminActivity(activity, { source: 'github', updatedAt: activity.updatedAt || '' });
+          } else {
+            this.adminActivityStatus.source = 'cache';
+            this.adminActivityStatus.loading = false;
+          }
+          // Sizes and storage ages are the only dashboard facts `apps.json`
+          // cannot carry, so they are resolved in the background, once the
+          // page is already usable.
+          if (this.cloudDetailsMissingCount > 0) this.refreshCloudFileDetails({ silent: true });
           this.refreshIcons();
         } catch (error) {
           if (sequence !== this._loadSequence) return;
@@ -1587,6 +1794,296 @@ function schoolCloud() {
       }
     },
 
+    /* ---------------------------------------------------------------------
+     * Administrator sign-in and upload record
+     *
+     * Sign-ins and uploads are appended to one small JSON document in the
+     * repository (stats/admin-activity.json) through the connected token, and
+     * cached on this device. A device that cannot write to GitHub keeps its
+     * entries queued and flushes them on the next successful connection, so a
+     * sign-in is never lost and the statistics stay identical on every
+     * computer. Nothing but timestamps and the public admin username is kept.
+     * ------------------------------------------------------------------- */
+
+    readLocalAdminActivity() {
+      const raw = safeStorageGet(globalThis.localStorage, ADMIN_ACTIVITY_STORAGE_KEY);
+      if (!raw) return emptyAdminActivity();
+      try { return normalizeAdminActivity(JSON.parse(raw)); }
+      catch { return emptyAdminActivity(); }
+    },
+    writeLocalAdminActivity(activity) {
+      const normalized = normalizeAdminActivity(activity);
+      safeStorageSet(globalThis.localStorage, ADMIN_ACTIVITY_STORAGE_KEY, JSON.stringify(normalized));
+      return normalized;
+    },
+    readPendingAdminActivity() {
+      const raw = safeStorageGet(globalThis.localStorage, ADMIN_ACTIVITY_PENDING_KEY);
+      if (!raw) return emptyAdminActivity();
+      try { return normalizeAdminActivity(JSON.parse(raw)); }
+      catch { return emptyAdminActivity(); }
+    },
+    writePendingAdminActivity(activity) {
+      const normalized = normalizeAdminActivity(activity);
+      if (normalized.logins.length || normalized.uploads.length) {
+        safeStorageSet(globalThis.localStorage, ADMIN_ACTIVITY_PENDING_KEY, JSON.stringify(normalized));
+      } else {
+        safeStorageRemove(globalThis.localStorage, ADMIN_ACTIVITY_PENDING_KEY);
+      }
+      this.adminActivityStatus.pendingCount = normalized.logins.length + normalized.uploads.length;
+      return normalized;
+    },
+    /** Load this device's copy, plus anything still waiting to be shared. */
+    hydrateAdminActivity() {
+      const local = this.readLocalAdminActivity();
+      const pending = this.readPendingAdminActivity();
+      const merged = mergeAdminActivity(local, pending, this.adminActivity);
+      this.adminActivity = merged;
+      this.writeLocalAdminActivity(merged);
+      this.writePendingAdminActivity(pending);
+      this.adminActivityStatus.loading = false;
+      return merged;
+    },
+    /**
+     * Absorb a record read from the website or GitHub. The union is kept, so a
+     * record that is a few minutes behind a deployment can never remove a
+     * sign-in this device already knows about.
+     */
+    absorbAdminActivity(activity, { source = 'local', updatedAt = '' } = {}) {
+      const normalized = normalizeAdminActivity(activity);
+      if (!normalized.logins.length && !normalized.uploads.length && !normalized.updatedAt) return this.adminActivity;
+      const merged = mergeAdminActivity(this.adminActivity, normalized);
+      this.adminActivity = merged;
+      this.writeLocalAdminActivity(merged);
+      this.adminActivityStatus.loading = false;
+      this.adminActivityStatus.source = source;
+      this.adminActivityStatus.error = '';
+      if (updatedAt || normalized.updatedAt) this.adminActivityStatus.githubUpdatedAt = updatedAt || normalized.updatedAt;
+      return merged;
+    },
+    recordAdminActivityEntry(kind, entry) {
+      const next = kind === 'upload'
+        ? withAdminUpload(this.adminActivity, entry)
+        : withAdminLogin(this.adminActivity, entry);
+      const normalizedEntry = kind === 'upload'
+        ? normalizeUploadEntry(entry)
+        : normalizeLoginEntry(entry);
+      if (!normalizedEntry) return;
+      this.adminActivity = { ...next, updatedAt: new Date().toISOString() };
+      this.writeLocalAdminActivity(this.adminActivity);
+      // Queue the entry for the shared record. It stays queued until a write
+      // to GitHub succeeds, so a locked token delays sharing but never loses
+      // the sign-in.
+      const pending = this.readPendingAdminActivity();
+      const queued = kind === 'upload'
+        ? withAdminUpload(pending, normalizedEntry)
+        : withAdminLogin(pending, normalizedEntry);
+      this.writePendingAdminActivity(queued);
+      this.adminActivityStatus.source = this.adminActivityStatus.source === 'github' ? 'github' : 'local';
+      this.syncAdminActivityToGitHub({ silent: true });
+    },
+    /** Remember that the administrator signed in, on this device and shared. */
+    recordAdminLogin() {
+      this.recordAdminActivityEntry('login', {
+        at: new Date().toISOString(),
+        user: SITE_CONFIG.admin.username || 'administrator'
+      });
+    },
+    /** Remember a published file, so the dashboard can list the latest uploads. */
+    recordAdminUpload(item) {
+      if (!item) return;
+      this.recordAdminActivityEntry('upload', {
+        at: new Date().toISOString(),
+        path: item.path || '',
+        name: item.fileName || '',
+        title: item.name || item.fileName || '',
+        bytes: Number(item.size) || 0,
+        subject: item.meta?.subject || '',
+        years: item.meta?.years || [],
+        owner: item.meta?.owner || ''
+      });
+    },
+    /**
+     * Merge queued and local entries into stats/admin-activity.json. Silent by
+     * default: signing in or publishing never fails because the activity
+     * record could not be written, and the entries simply stay queued.
+     */
+    async syncAdminActivityToGitHub({ silent = false } = {}) {
+      if (this.adminActivityStatus.syncing) return false;
+      if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
+        if (!silent) this.notify('Connect a GitHub token in Settings to share administrator activity with every computer.', 'info');
+        return false;
+      }
+      const pending = this.readPendingAdminActivity();
+      if (!pending.logins.length && !pending.uploads.length) {
+        if (!silent) this.notify('Every administrator sign-in and upload is already saved to the repository.', 'success');
+        return true;
+      }
+      this.adminActivityStatus.syncing = true;
+      try {
+        const target = this.repositoryTarget;
+        const result = await mergeAdminActivityIntoGitHub({
+          owner: target.owner,
+          repo: target.name,
+          branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
+          token: this.githubAuth.activeToken,
+          activity: pending
+        });
+        // Only the entries that were actually written are cleared from the
+        // queue; a new sign-in recorded during the request is kept.
+        const stillPending = mergeAdminActivity(this.readPendingAdminActivity());
+        const writtenKeys = new Set([
+          ...pending.logins.map(entry => activityEntryKey('login', entry)),
+          ...pending.uploads.map(entry => activityEntryKey('upload', entry))
+        ]);
+        this.writePendingAdminActivity({
+          logins: stillPending.logins.filter(entry => !writtenKeys.has(activityEntryKey('login', entry))),
+          uploads: stillPending.uploads.filter(entry => !writtenKeys.has(activityEntryKey('upload', entry)))
+        });
+        this.adminActivityStatus.source = 'github';
+        this.adminActivityStatus.githubUpdatedAt = new Date().toISOString();
+        this.adminActivityStatus.error = '';
+        if (!silent) {
+          this.notify(`Administrator activity saved to ${ADMIN_ACTIVITY_PATH} (${result.logins} sign-in${result.logins === 1 ? '' : 's'}, ${result.uploads} upload${result.uploads === 1 ? '' : 's'} in this save).`, 'success');
+        }
+        return true;
+      } catch (error) {
+        this.adminActivityStatus.error = `The shared activity record could not be updated (${error?.message || 'unknown error'}). Entries stay queued and are sent on the next successful save.`;
+        if (!silent) this.notify(this.adminActivityStatus.error, 'error');
+        return false;
+      } finally {
+        this.adminActivityStatus.syncing = false;
+        this.refreshIcons();
+      }
+    },
+    /** Re-read the website's copy and share anything still queued. */
+    async refreshAdminActivity({ announce = true } = {}) {
+      this.adminActivityStatus.loading = true;
+      try {
+        const data = await this.fetchJson(`./${ADMIN_ACTIVITY_PATH}?v=${Date.now()}`, { retries: 0 });
+        this.absorbAdminActivity(data, { source: 'github', updatedAt: data?.updatedAt || '' });
+      } catch {
+        this.adminActivityStatus.source = 'cache';
+      } finally {
+        this.adminActivityStatus.loading = false;
+      }
+      await this.syncAdminActivityToGitHub({ silent: !announce });
+      if (announce) this.notify(this.adminActivityPendingLabel || 'Administrator activity refreshed.', 'success');
+      this.refreshIcons();
+    },
+    async syncAdminActivityFromButton() {
+      if (!this.guardAction('sync')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
+      await this.refreshAdminActivity({ announce: true });
+    },
+
+    /* ---------------------------------------------------------------------
+     * Cloud file details: size and storage age
+     *
+     * `apps.json` carries no size, and older uploads have no `addedAt`, so the
+     * dashboard reads both from GitHub when it needs them: one directory
+     * listing for sizes and one commit lookup per file that has no recorded
+     * date. Resolved dates are cached on this device so the API is not asked
+     * twice.
+     * ------------------------------------------------------------------- */
+
+    readCachedCloudFileDates() {
+      const raw = safeStorageGet(globalThis.localStorage, CLOUD_FILE_DATES_STORAGE_KEY);
+      if (!raw) return {};
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+        const result = {};
+        for (const [path, value] of Object.entries(parsed)) {
+          if (!/^apps\/[^/]+$/.test(path) || !Number.isFinite(Date.parse(String(value)))) continue;
+          result[path] = new Date(Date.parse(String(value))).toISOString();
+        }
+        return result;
+      } catch {
+        return {};
+      }
+    },
+    saveCachedCloudFileDates(dates) {
+      if (dates && typeof dates === 'object' && Object.keys(dates).length) {
+        safeStorageSet(globalThis.localStorage, CLOUD_FILE_DATES_STORAGE_KEY, JSON.stringify(dates));
+      }
+    },
+    /** Apply resolved sizes and upload dates to the live library items. */
+    applyCloudFileDetails({ sizes = {}, addedAt = {} } = {}) {
+      let changed = 0;
+      const items = this.libraryItems.map(item => {
+        const size = Number(sizes[item.path]);
+        const date = addedAt[item.path];
+        const nextSize = Number.isFinite(size) && size > 0 ? size : item.size;
+        const nextAddedAt = Number.isFinite(Date.parse(String(date || ''))) ? date : (item.addedAt || item.meta?.addedAt || '');
+        if (nextSize === item.size && nextAddedAt === (item.addedAt || '')) return item;
+        changed += 1;
+        return { ...item, size: nextSize, addedAt: nextAddedAt, meta: { ...item.meta, bytes: nextSize || item.meta?.bytes || 0, addedAt: nextAddedAt || item.meta?.addedAt || '' } };
+      });
+      if (changed) this.libraryItems = items;
+      return changed;
+    },
+    /**
+     * Ask GitHub for the missing sizes and upload dates. Best effort: a failed
+     * or rate-limited lookup reports what went wrong and leaves the dashboard
+     * fully usable.
+     */
+    async refreshCloudFileDetails({ silent = false, maxDateLookups = CLOUD_FILE_DATE_LOOKUP_BUDGET } = {}) {
+      if (this.cloudDetails.refreshing) return false;
+      const files = this.apps.filter(item => item.source === 'github');
+      if (!files.length) {
+        if (!silent) this.notify('There are no published files to measure yet.', 'info');
+        return false;
+      }
+      this.cloudDetails.refreshing = true;
+      this.cloudDetails.message = 'Reading file sizes and upload dates from GitHub…';
+      this.cloudDetails.error = '';
+      try {
+        const target = this.repositoryTarget;
+        // A date recorded in library.json at upload time is authoritative and
+        // free; only files without one cost a commit lookup. Recorded dates are
+        // folded into the device cache so they are available offline too.
+        const knownDates = { ...this.readCachedCloudFileDates() };
+        for (const item of files) {
+          const recorded = item.addedAt || item.meta?.addedAt || '';
+          if (recorded && Number.isFinite(Date.parse(recorded))) knownDates[item.path] = recorded;
+        }
+        const needsDates = files
+          .filter(item => !(item.addedAt || item.meta?.addedAt))
+          .map(item => item.path);
+        const details = await readCloudFileDetails({
+          owner: target.owner,
+          repo: target.name,
+          branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
+          paths: needsDates,
+          knownDates,
+          maxDateLookups
+        });
+        const mergedDates = { ...knownDates, ...details.addedAt };
+        this.saveCachedCloudFileDates(mergedDates);
+        const changed = this.applyCloudFileDetails({ sizes: details.sizes, addedAt: mergedDates });
+        this.cloudDetails.refreshedAt = new Date().toISOString();
+        if (details.warnings.length && !Object.keys(details.sizes).length) {
+          this.cloudDetails.error = details.warnings[0];
+          this.cloudDetails.message = '';
+          if (!silent) this.notify(details.warnings[0], 'error');
+        } else {
+          this.cloudDetails.message = `Checked ${changed} file${changed === 1 ? '' : 's'} — sizes and storage ages are up to date.`;
+          if (!silent) this.notify(this.cloudDetails.message, 'success');
+        }
+        return true;
+      } catch (error) {
+        this.cloudDetails.error = error?.message || 'GitHub could not be reached to read file details.';
+        this.cloudDetails.message = '';
+        if (!silent) this.notify(this.cloudDetails.error, 'error');
+        return false;
+      } finally {
+        this.cloudDetails.refreshing = false;
+        this.refreshIcons();
+      }
+    },
+
     async refreshStats() {
       if (this.stats.loadingDownloads) return;
       if (!this.guardAction('refresh')) {
@@ -1598,6 +2095,10 @@ function schoolCloud() {
         this.loadDownloadCounters(this.apps, true)
       ]);
       this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      // Sizes and storage ages come from GitHub rather than the counters, so
+      // they are refreshed alongside the totals but never block them.
+      if (this.cloudDetailsMissingCount > 0) this.refreshCloudFileDetails({ silent: true });
+      this.refreshAdminActivity({ announce: false });
     },
 
     async retryLoad() { await this.loadLibrary({ force: true }); },
@@ -1718,6 +2219,10 @@ function schoolCloud() {
         // Announce presence straight away so the indicator lights up for
         // students and other administrators without waiting for the interval.
         this.startAdminPresenceHeartbeat();
+        // Record the sign-in for the dashboard statistics — today, this week,
+        // this month and the latest sign-in — on this device and in the shared
+        // record every other computer reads.
+        this.recordAdminLogin();
         this.openDashboard();
       } catch (error) {
         this.loginError = error?.message || 'Could not check the admin sign-in.';
@@ -1952,6 +2457,9 @@ function schoolCloud() {
     isReviewDue(value) { return isReviewDue(value); },
     formatCount(value) { return formatCount(value); },
     formatDate(value) { return formatDate(value); },
+    formatDateTime(value) { return formatDateTime(value); },
+    formatRelativeTime(value) { return formatRelativeTime(value); },
+    formatStoredDays(value) { return formatStoredDays(value); },
     formatBytes(value) { return formatBytes(value); },
     formatYears(value) { return formatYears(value); },
     formatDownloadCount(value) { return formatDownloadCount(value); },
@@ -2144,6 +2652,11 @@ function schoolCloud() {
           this.libraryItems = [...this.libraryItems, item];
           this.stats.downloads[item.id] = 0;
         }
+        // Log the upload so "latest uploads" and the cloud inventory show what
+        // arrived, how big it is and how long it has been stored.
+        this.recordAdminUpload(item || {
+          path: result.path, fileName: result.name, name: result.name, size: bytes.length, meta: { subject: metadata.subject, years: metadata.years, owner: metadata.owner }
+        });
         this.notify(
           `“${item?.name || result.name}” was stored in GitHub cloud storage and published successfully.${this.uploadVerificationNote(result)}`,
           'success'

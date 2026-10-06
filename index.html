@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="site-brand__version ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.14.0</span>
+                        <span class="site-brand__version ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.15.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -1059,6 +1059,288 @@
                 </div>
             </div>
 
+            <!-- Cloud storage allowance and administrator sign-in statistics -->
+            <div class="mb-10 grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="cloud-storage-heading">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 text-sky-700">
+                                    <i data-lucide="hard-drive" class="h-4 w-4" aria-hidden="true"></i>
+                                </span>
+                                <h3 id="cloud-storage-heading" class="font-bold text-slate-900">Cloud storage</h3>
+                            </div>
+                            <p class="mt-1 text-sm text-slate-600">
+                                Every published file, its size, and how much of the <span x-text="storageQuotaLabel"></span> is still free.
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ring-1" :class="cloudStorageStatusClass">
+                                <i data-lucide="gauge" class="h-3.5 w-3.5" aria-hidden="true"></i>
+                                <span x-text="cloudStorageStatusLabel"></span>
+                            </span>
+                            <button type="button" @click="refreshCloudFileDetails()" :disabled="cloudDetails.refreshing"
+                                    title="Read each published file's size and upload date from GitHub"
+                                    class="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 focus-ring">
+                                <i :data-lucide="cloudDetails.refreshing ? 'loader-2' : 'refresh-cw'" class="h-3.5 w-3.5" :class="cloudDetails.refreshing && 'animate-spin'" aria-hidden="true"></i>
+                                <span x-text="cloudDetails.refreshing ? 'Checking…' : 'Refresh file details'"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        <div class="rounded-xl bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Total size used</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-900" x-text="cloudStorageStatistics.usedLabel"></p>
+                            <p class="mt-0.5 text-[11px] text-slate-500" x-text="cloudStorageStatistics.usedDetail"></p>
+                        </div>
+                        <div class="rounded-xl bg-emerald-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">Available in cloud</p>
+                            <p class="mt-1 text-2xl font-bold text-emerald-800" x-text="cloudStorageStatistics.availableLabel"></p>
+                            <p class="mt-0.5 text-[11px] text-emerald-700" x-show="cloudStorageStatistics.hasQuota">Space left before the allowance is full</p>
+                            <p class="mt-0.5 text-[11px] text-emerald-700" x-show="!cloudStorageStatistics.hasQuota">Set <code>storage.quotaBytes</code> in config.js</p>
+                        </div>
+                        <div class="rounded-xl bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Cloud allowance</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-900" x-text="cloudStorageStatistics.quotaLabel"></p>
+                            <p class="mt-0.5 text-[11px] text-slate-500" x-text="storageQuotaNote"></p>
+                        </div>
+                        <div class="rounded-xl bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Stored files</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-900" x-text="cloudStorageStatistics.fileCount"></p>
+                            <p class="mt-0.5 text-[11px] text-slate-500">
+                                <span x-text="averageFileSizeLabel"></span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between text-xs font-semibold text-slate-500">
+                            <span x-text="cloudStorageStatistics.percentLabel"></span>
+                            <span x-text="cloudStorageStatistics.knownSizeCount + ' of ' + cloudStorageStatistics.totalCount + ' files measured'"></span>
+                        </div>
+                        <div class="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-100" role="img"
+                             :aria-label="cloudStorageStatistics.percentLabel">
+                            <div class="h-2.5 rounded-full transition-all" :class="cloudStorageBarClass"
+                                 :style="`width: ${Math.max(2, cloudStorageStatistics.percentUsed)}%`"></div>
+                        </div>
+                        <p class="mt-3 text-xs text-slate-500">
+                            <span x-text="cloudStorageOldestLabel"></span>
+                            <span x-show="cloudStorageStatistics.unknownSizeCount > 0" x-cloak>
+                                <span x-text="cloudStorageStatistics.unknownSizeCount"></span>
+                                file(s) have no recorded size yet — press <strong>Refresh file details</strong> to read them from GitHub.
+                            </span>
+                        </p>
+                        <p class="mt-1 text-xs text-slate-400" x-show="cloudDetails.message || cloudDetails.error" x-cloak
+                           x-text="cloudDetails.error || cloudDetails.message"></p>
+                    </div>
+                </section>
+
+                <section class="rounded-2xl border border-indigo-200 bg-white p-5 shadow-sm" aria-labelledby="admin-signins-heading">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700">
+                                    <i data-lucide="log-in" class="h-4 w-4" aria-hidden="true"></i>
+                                </span>
+                                <h3 id="admin-signins-heading" class="font-bold text-slate-900">Administrator sign-ins</h3>
+                            </div>
+                            <p class="mt-1 text-sm text-slate-600">How often the administrator signed in today, this week and this month.</p>
+                        </div>
+                        <button type="button" @click="syncAdminActivityFromButton()" :disabled="adminActivityStatus.syncing"
+                                title="Re-read the shared record and save any sign-ins recorded on this device"
+                                class="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 focus-ring">
+                            <i :data-lucide="adminActivityStatus.syncing ? 'loader-2' : 'cloud-upload'" class="h-3.5 w-3.5" :class="adminActivityStatus.syncing && 'animate-spin'" aria-hidden="true"></i>
+                            <span x-text="adminActivityStatus.syncing ? 'Saving…' : 'Save sign-ins'"></span>
+                        </button>
+                    </div>
+
+                    <div class="mt-5 grid grid-cols-3 gap-3">
+                        <div class="rounded-xl bg-indigo-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-500">Today</p>
+                            <p class="mt-1 text-2xl font-bold text-indigo-900" x-text="adminLoginStats.today"></p>
+                            <p class="mt-0.5 text-[11px] text-indigo-700">sign-in(s)</p>
+                        </div>
+                        <div class="rounded-xl bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">This week</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-900" x-text="adminLoginStats.week"></p>
+                            <p class="mt-0.5 text-[11px] text-slate-500">last 7 days</p>
+                        </div>
+                        <div class="rounded-xl bg-slate-50 p-3">
+                            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">This month</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-900" x-text="adminLoginStats.month"></p>
+                            <p class="mt-0.5 text-[11px] text-slate-500">last 30 days</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Latest administrator sign-in</p>
+                            <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-indigo-700 ring-1 ring-indigo-200"
+                                  x-text="adminLoginStats.total + ' recorded'"></span>
+                        </div>
+                        <template x-if="latestAdminLogin">
+                            <div class="mt-2 flex items-center gap-3">
+                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white">
+                                    <i data-lucide="user-check" class="h-4 w-4" aria-hidden="true"></i>
+                                </span>
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-bold text-slate-900" x-text="latestAdminLogin.user"></p>
+                                    <p class="text-xs text-slate-500">
+                                        <span x-text="latestAdminLogin.when"></span>
+                                        <span aria-hidden="true"> · </span>
+                                        <span class="font-semibold text-indigo-700" x-text="latestAdminLogin.relative"></span>
+                                    </p>
+                                </div>
+                            </div>
+                        </template>
+                        <p x-show="!latestAdminLogin" class="mt-2 text-sm text-slate-500">No sign-in has been recorded yet. The first one appears here the moment you sign in.</p>
+                    </div>
+
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between text-xs font-semibold text-slate-500">
+                            <span>Sign-ins per day</span>
+                            <span x-text="'Last ' + adminLoginStats.perDay.length + ' days · ' + adminLoginStats.seriesTotal + ' total'"></span>
+                        </div>
+                        <div class="mt-2 flex h-24 items-end gap-1" role="img"
+                             :aria-label="'Administrator sign-ins per day over the last ' + adminLoginStats.perDay.length + ' days'">
+                            <template x-for="day in adminLoginStats.perDay" :key="'login-day-' + day.day">
+                                <div class="flex h-full flex-1 flex-col items-center justify-end gap-1">
+                                    <span class="text-[10px] font-bold text-slate-500" x-text="day.count || ''"></span>
+                                    <div class="w-full rounded-t transition-all"
+                                         :class="day.count > 0 ? (day.isToday ? 'bg-indigo-600' : 'bg-indigo-300') : 'bg-slate-200'"
+                                         :style="`height: ${loginBarHeight(day)}%`"
+                                         :title="day.label + ': ' + day.count + ' sign-in(s)'"></div>
+                                    <span class="text-[9px] text-slate-400" x-text="day.shortLabel"></span>
+                                </div>
+                            </template>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-400" x-text="adminActivitySourceLabel"></p>
+                        <p class="mt-1 text-xs font-semibold text-amber-700" x-show="adminActivityPendingLabel" x-cloak
+                           x-text="adminActivityPendingLabel"></p>
+                    </div>
+
+                    <div class="mt-4 border-t border-slate-100 pt-3">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Latest sign-ins</p>
+                        <template x-if="recentAdminLogins.length === 0">
+                            <p class="mt-2 text-sm text-slate-500">Nothing recorded on this device or in the shared record yet.</p>
+                        </template>
+                        <ul x-show="recentAdminLogins.length > 0" class="mt-2 divide-y divide-slate-100 text-sm">
+                            <template x-for="entry in recentAdminLogins" :key="'login-' + entry.at + entry.user">
+                                <li class="flex items-center justify-between gap-3 py-1.5">
+                                    <span class="truncate text-slate-700" x-text="entry.user || 'Administrator'"></span>
+                                    <span class="shrink-0 text-xs text-slate-500" x-text="formatRelativeTime(entry.at)"></span>
+                                </li>
+                            </template>
+                        </ul>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Cloud file inventory and the latest uploads -->
+            <section class="mb-10 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.65fr)]"
+                     aria-labelledby="cloud-inventory-heading">
+                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                                    <i data-lucide="files" class="h-4 w-4" aria-hidden="true"></i>
+                                </span>
+                                <h3 id="cloud-inventory-heading" class="font-bold text-slate-900">File size &amp; storage age</h3>
+                            </div>
+                            <p class="mt-1 text-sm text-slate-600">Each published file, its size, and how many days it has been stored in the cloud.</p>
+                        </div>
+                        <span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600"
+                              x-text="cloudStorageStatistics.totalBytes ? formatBytes(cloudStorageStatistics.totalBytes) + ' in the cloud' : 'No files measured yet'"></span>
+                    </div>
+                    <template x-if="cloudFileInventory.length === 0">
+                        <p class="px-5 py-10 text-center text-sm text-slate-500">No published files yet. Upload a resource and it appears here with its size and storage age.</p>
+                    </template>
+                    <div x-show="cloudFileInventory.length > 0" class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <caption class="sr-only">Size and storage age of each published file</caption>
+                            <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                                <tr>
+                                    <th scope="col" class="px-5 py-3 text-left font-semibold">File</th>
+                                    <th scope="col" class="px-5 py-3 text-left font-semibold">Size</th>
+                                    <th scope="col" class="hidden px-5 py-3 text-left font-semibold md:table-cell">Stored since</th>
+                                    <th scope="col" class="px-5 py-3 text-left font-semibold">Days in cloud</th>
+                                    <th scope="col" class="hidden px-5 py-3 text-left font-semibold sm:table-cell">Downloads</th>
+                                    <th scope="col" class="px-5 py-3 text-right font-semibold">Delete</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <template x-for="file in cloudFileInventory" :key="'cloud-file-' + file.id">
+                                    <tr class="hover:bg-slate-50">
+                                        <th scope="row" class="px-5 py-3 text-left font-normal">
+                                            <p class="font-medium text-slate-900" x-text="file.name"></p>
+                                            <p class="text-xs text-slate-400" x-text="file.fileName"></p>
+                                        </th>
+                                        <td class="px-5 py-3 font-semibold text-slate-900" x-text="file.sizeKnown ? formatBytes(file.bytes) : 'Size unknown'"></td>
+                                        <td class="hidden px-5 py-3 text-slate-600 md:table-cell" x-text="file.addedAt ? formatDate(file.addedAt) : 'Not recorded'"></td>
+                                        <td class="px-5 py-3">
+                                            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold"
+                                                  :class="file.storedDays === null ? 'bg-slate-100 text-slate-500' : (file.storedDays < 30 ? 'bg-emerald-50 text-emerald-700' : (file.storedDays < 180 ? 'bg-amber-50 text-amber-800' : 'bg-rose-50 text-rose-700'))"
+                                                  :title="file.storedLabel">
+                                                <i data-lucide="clock-3" class="h-3 w-3" aria-hidden="true"></i>
+                                                <span x-text="file.storedDays === null ? 'Unknown' : (file.storedDays === 0 ? 'Today' : file.storedDays + ' day' + (file.storedDays === 1 ? '' : 's'))"></span>
+                                            </span>
+                                        </td>
+                                        <td class="hidden px-5 py-3 font-semibold text-slate-900 sm:table-cell" x-text="formatCount(file.downloads)"></td>
+                                        <td class="px-5 py-3 text-right">
+                                            <button type="button" @click="confirmDeleteApp(apps.find(item => item.id === file.id))" :disabled="deletingAppId === file.id"
+                                                    :aria-label="'Delete ' + file.name + ' from GitHub'"
+                                                    title="Delete this file from the GitHub repository, library metadata and saved download counts"
+                                                    class="rounded-lg p-2 text-slate-300 transition hover:bg-red-50 hover:text-red-500 focus-ring disabled:opacity-60">
+                                                <i :data-lucide="deletingAppId === file.id ? 'loader-2' : 'trash-2'" class="h-4 w-4" :class="deletingAppId === file.id && 'animate-spin'" aria-hidden="true"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <aside class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="latest-uploads-heading">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Upload log</p>
+                            <h3 id="latest-uploads-heading" class="mt-1 font-bold text-slate-900">Latest uploaded files</h3>
+                        </div>
+                        <i data-lucide="history" class="h-5 w-5 text-emerald-600" aria-hidden="true"></i>
+                    </div>
+                    <template x-if="recentAdminUploads.length === 0">
+                        <p class="mt-4 text-sm text-slate-500">No upload has been recorded yet. Published files appear here with their size and storage age.</p>
+                    </template>
+                    <ol x-show="recentAdminUploads.length > 0" class="mt-3 divide-y divide-slate-100">
+                        <template x-for="entry in recentAdminUploads" :key="'upload-' + entry.at + entry.path">
+                            <li class="py-2.5">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-semibold text-slate-800" x-text="entry.title || entry.name"></p>
+                                        <p class="mt-0.5 truncate text-xs text-slate-500">
+                                            <span x-text="entry.name"></span>
+                                            <span aria-hidden="true"> · </span>
+                                            <span x-text="entry.sizeLabel"></span>
+                                        </p>
+                                    </div>
+                                    <span class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                                          :class="entry.presentInLibrary ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'"
+                                          x-text="entry.presentInLibrary ? entry.storedLabel : 'Removed from cloud'"></span>
+                                </div>
+                                <p class="mt-0.5 text-xs text-slate-400">
+                                    <span x-text="entry.when"></span>
+                                    <span aria-hidden="true"> · </span>
+                                    <span x-text="entry.exactWhen"></span>
+                                </p>
+                            </li>
+                        </template>
+                    </ol>
+                </aside>
+            </section>
+
             <!-- Content health and engagement, providing fast routes into the existing library controls. -->
             <div class="grid grid-cols-1 gap-6 xl:grid-cols-2 mb-10">
                 <section id="review-due-section" class="scroll-mt-24 overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm" aria-labelledby="review-due-heading">
@@ -1179,6 +1461,8 @@
                             <tr>
                                 <th scope="col" class="text-left font-semibold px-6 py-3">App</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3 hidden sm:table-cell">Subject</th>
+                                <th scope="col" class="text-left font-semibold px-6 py-3">Size</th>
+                                <th scope="col" class="text-left font-semibold px-6 py-3 hidden lg:table-cell">Stored</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3 hidden sm:table-cell">Source</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3">Downloads</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3 hidden md:table-cell w-1/4">Share</th>
@@ -1193,6 +1477,10 @@
                                         <p class="text-xs text-slate-400" x-text="app.fileName"></p>
                                     </th>
                                     <td class="px-6 py-4 hidden sm:table-cell text-slate-600" x-text="app.meta.subject"></td>
+                                    <td class="px-6 py-4 text-slate-600" x-text="sizeLabel(app)"></td>
+                                    <td class="px-6 py-4 hidden lg:table-cell">
+                                        <span class="text-xs font-semibold text-slate-600" :title="storedAgeTitle(app)" x-text="storedAgeShort(app)"></span>
+                                    </td>
                                     <td class="px-6 py-4 hidden sm:table-cell">
                                         <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded"
                                               :class="app.source === 'github' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600'"
@@ -1289,6 +1577,8 @@
                                 <th scope="col" class="text-left font-semibold px-6 py-3">Resource</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3 hidden sm:table-cell">Subject</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3">Type</th>
+                                <th scope="col" class="text-left font-semibold px-6 py-3">Size</th>
+                                <th scope="col" class="text-left font-semibold px-6 py-3 hidden lg:table-cell">Days in cloud</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3 hidden sm:table-cell">Source</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3">Downloads</th>
                                 <th scope="col" class="text-left font-semibold px-6 py-3 hidden md:table-cell w-1/4">Share</th>
@@ -1308,6 +1598,10 @@
                                     <td class="px-6 py-4 hidden sm:table-cell text-slate-600" x-text="resource.meta.subject"></td>
                                     <td class="px-6 py-4">
                                         <span class="text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-1 rounded" x-text="fileExtension(resource)"></span>
+                                    </td>
+                                    <td class="px-6 py-4 text-slate-600" x-text="sizeLabel(resource)"></td>
+                                    <td class="px-6 py-4 hidden lg:table-cell">
+                                        <span class="text-xs font-semibold text-slate-600" :title="storedAgeTitle(resource)" x-text="storedAgeShort(resource)"></span>
                                     </td>
                                     <td class="px-6 py-4 hidden sm:table-cell">
                                         <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded"
