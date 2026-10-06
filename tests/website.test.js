@@ -177,13 +177,17 @@ describe('School Cloud release configuration', () => {
       read('../assets/js/lib/githubPublish.js'), read('../sw.js'), read('../assets/data/publish-token.json')
     ]);
 
-    // The shipped record is an empty vault: a shape, never a credential.
+    // The shipped record may already contain a usable encrypted vault, but it
+    // must never contain a readable token or an unwrapped key.
     const vault = JSON.parse(vaultFile);
     expect(vault.version).toBe(1);
     expect(vault.cipher).toBe('AES-GCM');
     expect(vault.kdf).toMatchObject({ name: 'PBKDF2', hash: 'SHA-256' });
-    expect(vault.token).toBeNull();
-    expect(vault.slots).toEqual({});
+    expect(vault.token).toMatchObject({ iv: expect.any(String), data: expect.any(String) });
+    expect(vault.slots).toEqual({
+      admin: expect.objectContaining({ salt: expect.any(String), iv: expect.any(String), data: expect.any(String), gate: expect.any(String) }),
+      master: expect.objectContaining({ salt: expect.any(String), iv: expect.any(String), data: expect.any(String), gate: expect.any(String) })
+    });
     expect(vaultFile).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
 
     // Encryption happens in the browser, with the administrator's passwords.

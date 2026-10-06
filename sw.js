@@ -14,7 +14,7 @@
  *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.13.0';
+const VERSION = 'v1.14.0';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -43,6 +43,7 @@ const SHELL_ASSETS = [
   './assets/js/lib/githubPublish.js',
   './assets/js/lib/guard.js',
   './assets/js/lib/presence.js',
+  './assets/js/lib/responsive.js',
   './assets/js/lib/uploadSafety.js',
   './assets/js/lib/tokenVault.js',
   './assets/vendor/alpine.esm.js',

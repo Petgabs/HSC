@@ -27,6 +27,7 @@ import {
   AdminPresenceBeacon, PRESENCE_BUCKET_MS, PRESENCE_WINDOW_MS, describePresence, localPresenceIsLive,
   presenceBucketIndex
 } from './lib/presence.js';
+import { interfaceModeForViewport } from './lib/responsive.js';
 import {
   findDigestMatch, formatDigest, inspectUpload, readFileBytes, sha256Hex as sha256HexBytes, suggestAvailableFileName
 } from './lib/uploadSafety.js';
@@ -285,6 +286,7 @@ function normalizeCachedLibrarySnapshot(data) {
 function schoolCloud() {
   return {
     currentView: 'library',
+    interfaceMode: 'desktop',
     isAdmin: false,
     showLogin: false,
     loginMode: 'admin',
@@ -757,9 +759,19 @@ function schoolCloud() {
       };
     },
 
+    syncInterfaceMode() {
+      const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+      const nextMode = interfaceModeForViewport(viewportWidth);
+      if (this.interfaceMode !== nextMode) this.interfaceMode = nextMode;
+    },
+
     async init() {
       if (this._initialized) return;
       this._initialized = true;
+      this.syncInterfaceMode();
+      const refreshInterfaceMode = () => this.syncInterfaceMode();
+      window.addEventListener('resize', refreshInterfaceMode, { passive: true });
+      window.addEventListener('orientationchange', refreshInterfaceMode, { passive: true });
       this.$watch('currentView', (view, previous) => {
         if (previous === 'settings' && view !== 'settings') this.lockAdminAccount();
       });
