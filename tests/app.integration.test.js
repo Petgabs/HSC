@@ -106,6 +106,14 @@ describe('School Cloud page integration', () => {
       expect(state.stats.visitors).toBe(41);
       expect(state.downloadsOf(state.apps[0])).toBe(7);
       expect(state.stats.backend).toBe('abacus');
+      expect(state.interfaceMode).toBe('tablet');
+      expect(window.document.body.dataset.interfaceMode).toBe('tablet');
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+      window.dispatchEvent(new window.Event('resize'));
+      expect(state.interfaceMode).toBe('phone');
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1366 });
+      window.dispatchEvent(new window.Event('orientationchange'));
+      expect(state.interfaceMode).toBe('desktop');
       expect(state.loginMode).toBe('admin');
       expect(state.githubAuth.activeToken).toBe('');
       expect(window.localStorage.getItem('githubToken')).toBeNull();

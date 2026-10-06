@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>School Cloud System — Classroom Library</title>
     <meta name="description" content="School Cloud System — browse, preview and download classroom mini apps, documents and resources by subject and year group.">
     <meta name="theme-color" content="#4f46e5">
@@ -18,7 +18,7 @@
     <script defer src="./assets/vendor/lucide.min.js"></script>
     <script type="module" src="./assets/js/app.js"></script>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans min-h-screen" x-data="schoolCloud" x-init="init()">
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen" x-data="schoolCloud" x-init="init()" :data-interface-mode="interfaceMode">
 
     <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:bg-white focus:text-indigo-700 focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:ring-2 focus:ring-indigo-500">
         Skip to main content
@@ -34,9 +34,9 @@
     </div>
 
     <!-- Header -->
-    <header class="bg-white border-b sticky top-0 z-20">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center gap-4">
-            <button type="button" class="flex items-center gap-3 focus-ring rounded-xl group" @click="refreshWebsite()"
+    <header class="site-header bg-white border-b sticky top-0 z-20">
+        <div class="site-header__inner max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center gap-4">
+            <button type="button" class="site-brand flex items-center gap-3 focus-ring rounded-xl group" @click="refreshWebsite()"
                     title="Refresh the website">
                 <div class="bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600 p-2 sm:p-2.5 rounded-xl text-white shadow-md shadow-indigo-200/70 group-hover:shadow-lg group-hover:shadow-indigo-300/70 transition-all">
                     <i :data-lucide="refreshingSite ? 'loader-2' : 'cloud'" class="w-5 h-5" :class="refreshingSite && 'animate-spin'" aria-hidden="true"></i>
@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.13.0</span>
+                        <span class="site-brand__version ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.14.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -52,7 +52,8 @@
                 </div>
             </button>
 
-            <div class="flex items-center gap-3 sm:gap-4">
+            <div class="site-header__right flex items-center gap-2 sm:gap-3">
+                <div class="header-actions flex items-center gap-3 sm:gap-4">
                 <!-- Live administrator-online indicator. It reports a
                      time-bucket heartbeat only, so it never reveals who is
                      signed in or from which device. -->
@@ -101,16 +102,78 @@
                     <i data-lucide="log-out" class="w-4 h-4" aria-hidden="true"></i>
                     Sign Out
                 </button>
+                </div>
+
+                <!-- A touch-friendly compact menu keeps the full set of account and admin tools
+                     reachable on phones, tablets, and narrow desktop windows. -->
+                <details class="compact-header-menu" @click.outside="$el.open = false"
+                         @keydown.escape.stop="$el.open = false; $el.querySelector('summary').focus()">
+                    <summary class="compact-header-menu__trigger focus-ring" aria-label="Open account and site tools">
+                        <i data-lucide="menu" class="h-5 w-5" aria-hidden="true"></i>
+                        <span>Menu</span>
+                    </summary>
+                    <div class="compact-header-menu__panel" role="group" aria-label="Account and site tools">
+                        <div class="compact-header-menu__status">
+                            <div class="flex min-w-0 items-start gap-2.5">
+                                <span class="compact-header-menu__dot" :class="presenceDotClass" aria-hidden="true"></span>
+                                <div class="min-w-0">
+                                    <p class="text-sm font-semibold text-slate-800" x-text="presence.label"></p>
+                                    <p class="mt-0.5 text-xs leading-5 text-slate-500" x-text="presence.detail"></p>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-xs font-medium text-slate-600"
+                                 :title="stats.online ? 'Total visits to this site' : 'Visit counter is offline; showing this device only'">
+                                <i data-lucide="users" class="h-4 w-4 text-indigo-600" aria-hidden="true"></i>
+                                <span x-text="stats.loadingVisitors ? 'Loading visits…' : formatCount(stats.visitors) + ' visits'"></span>
+                            </div>
+                        </div>
+                        <button type="button" x-show="isAdmin"
+                                @click="openDashboard(); $el.closest('details').open = false"
+                                class="compact-header-menu__item">
+                            <i data-lucide="layout-dashboard" class="h-4 w-4" aria-hidden="true"></i>
+                            Dashboard
+                        </button>
+                        <button type="button" x-show="isStaff && currentView !== 'upload'"
+                                @click="openUpload(); $el.closest('details').open = false"
+                                class="compact-header-menu__item compact-header-menu__item--primary">
+                            <i data-lucide="upload" class="h-4 w-4" aria-hidden="true"></i>
+                            Upload resource
+                        </button>
+                        <button type="button" x-show="isAdmin"
+                                @click="openCloudSettings(); $el.closest('details').open = false"
+                                class="compact-header-menu__item">
+                            <i data-lucide="settings" class="h-4 w-4" aria-hidden="true"></i>
+                            Cloud settings
+                        </button>
+                        <button type="button" x-show="!isStaff"
+                                @click="openLogin('admin'); $el.closest('details').open = false"
+                                class="compact-header-menu__item">
+                            <i data-lucide="shield" class="h-4 w-4" aria-hidden="true"></i>
+                            Administrator sign in
+                        </button>
+                        <div x-show="isStaff" class="compact-header-menu__account">
+                            <span class="inline-flex items-center gap-2 text-xs font-semibold text-slate-500">
+                                <i data-lucide="shield-check" class="h-4 w-4 text-indigo-600" aria-hidden="true"></i>
+                                Administrator account
+                            </span>
+                            <button type="button" @click="logout(); $el.closest('details').open = false"
+                                    class="compact-header-menu__item mt-2 w-full">
+                                <i data-lucide="log-out" class="h-4 w-4" aria-hidden="true"></i>
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+                </details>
             </div>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main id="main-content" class="site-main max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         <!-- Student learning dashboard -->
         <section x-show="currentView === 'library'" x-transition aria-labelledby="student-dashboard-heading"
-                 class="relative mb-8 overflow-hidden rounded-3xl bg-slate-950 text-white shadow-2xl shadow-indigo-950/20">
+                 class="site-hero relative mb-8 overflow-hidden rounded-3xl bg-slate-950 text-white shadow-2xl shadow-indigo-950/20">
             <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.38),_transparent_34%),radial-gradient(circle_at_bottom_left,_rgba(45,212,191,0.20),_transparent_30%)]" aria-hidden="true"></div>
             <div class="absolute -right-20 -top-24 h-72 w-72 rounded-full border border-white/10" aria-hidden="true"></div>
             <div class="absolute -bottom-32 right-1/4 h-64 w-64 rounded-full border border-white/10" aria-hidden="true"></div>
@@ -122,7 +185,7 @@
                         YOUR LEARNING SPACE
                     </div>
                     <p class="text-sm font-medium text-indigo-200" x-text="studentGreeting + ', Students'"></p>
-                    <h2 id="student-dashboard-heading" class="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
+                    <h2 id="student-dashboard-heading" class="site-hero__title mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
                         Ready for your next lesson?
                     </h2>
                     <p class="mt-4 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
@@ -132,7 +195,7 @@
                         Everything you need to learn, revise, and succeed — in one place.
                     </p>
 
-                    <div class="mt-7 flex flex-wrap gap-3">
+                    <div class="site-hero__actions mt-7 flex flex-wrap gap-3">
                         <button type="button" @click="focusLibrarySearch()"
                                 class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-900 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-indigo-50 focus-ring">
                             <i data-lucide="search" class="h-4 w-4" aria-hidden="true"></i>
@@ -145,7 +208,7 @@
                         </button>
                     </div>
 
-                    <dl class="mt-8 grid max-w-xl grid-cols-3 gap-3 border-t border-white/10 pt-6 sm:gap-6">
+                    <dl class="site-hero__stats mt-8 grid max-w-xl grid-cols-3 gap-3 border-t border-white/10 pt-6 sm:gap-6">
                         <div>
                             <dt class="text-xs font-medium text-slate-400">Learning resources</dt>
                             <dd class="mt-1 text-2xl font-bold text-white" x-text="formatCount(apps.length)"></dd>
@@ -194,7 +257,7 @@
 
         <!-- Library View -->
         <div x-show="currentView === 'library'" x-transition x-cloak id="library-catalog">
-            <div class="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div class="library-heading mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
                     <p class="text-xs font-bold uppercase tracking-[0.16em] text-indigo-600">School library</p>
                     <h2 class="mt-1 text-3xl font-bold tracking-tight text-slate-900">Explore your learning library</h2>
@@ -208,13 +271,13 @@
             </div>
 
             <!-- Search and filters -->
-            <section aria-labelledby="search-heading" class="mb-8">
+            <section aria-labelledby="search-heading" class="library-search-section mb-8">
                 <h3 id="search-heading" class="sr-only">Search and filter the library</h3>
 
-                <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5">
-                    <div class="flex flex-col lg:flex-row gap-3">
+                <div class="library-filter-card bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5">
+                    <div class="library-filter-controls flex flex-col lg:flex-row gap-3">
                         <!-- Search box -->
-                        <div class="flex-1">
+                        <div class="library-search-control flex-1">
                             <label for="library-search" class="sr-only">Search the library</label>
                             <div class="relative">
                                 <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true"></i>
@@ -232,7 +295,7 @@
                         </div>
 
                         <!-- Subject / year dropdowns -->
-                        <div class="flex flex-wrap gap-3">
+                        <div class="library-select-controls flex flex-wrap gap-3">
                             <div>
                                 <label for="library-subject" class="sr-only">Filter by subject</label>
                                 <select id="library-subject" x-model="filters.subject"
@@ -256,7 +319,7 @@
                         </div>
 
                         <!-- Sort -->
-                        <div class="flex gap-3">
+                        <div class="library-sort-controls flex gap-3">
                             <div>
                                 <label for="library-sort" class="sr-only">Sort results</label>
                                 <select id="library-sort" x-model="filters.sort"
@@ -388,7 +451,7 @@
 
             <!-- Loading skeletons -->
             <div x-show="loading.library && apps.length === 0" aria-hidden="true"
-                 class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                 class="library-card-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <template x-for="n in 6" :key="n">
                     <div class="bg-white rounded-xl border border-slate-200 p-6">
                         <div class="flex justify-between items-start mb-4">
@@ -410,7 +473,7 @@
 
             <!-- Empty: nothing in the library at all -->
             <template x-if="!loading.library && apps.length === 0 && !errors.library">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-16 text-center">
+                <div class="library-empty-state bg-white rounded-xl shadow-sm border border-slate-200 p-16 text-center">
                     <div class="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
                         <i data-lucide="inbox" class="w-10 h-10 text-slate-400" aria-hidden="true"></i>
                     </div>
@@ -421,7 +484,7 @@
 
             <!-- Empty: filters exclude everything -->
             <template x-if="!loading.library && apps.length > 0 && resultCount === 0">
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-16 text-center">
+                <div class="library-empty-state bg-white rounded-xl shadow-sm border border-slate-200 p-16 text-center">
                     <div class="bg-slate-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
                         <i data-lucide="search-x" class="w-10 h-10 text-slate-400" aria-hidden="true"></i>
                     </div>
@@ -440,12 +503,12 @@
             <!-- Mini apps -->
             <section x-show="filteredMiniApps.length > 0" aria-labelledby="apps-heading">
                 <h3 id="apps-heading" class="text-xl font-bold text-slate-900 mb-4">Mini Apps</h3>
-                <ul role="list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <ul role="list" class="library-card-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <template x-for="app in filteredMiniApps" :key="app.id">
-                        <li class="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+                        <li class="resource-card bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
                             x-init="observeDownloadCounter(app, $el)"
                             :class="isLatest(app) ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'">
-                            <div class="p-6 flex flex-col flex-1">
+                            <div class="resource-card__body p-6 flex flex-col flex-1">
                                 <div class="flex justify-between items-start gap-3 mb-1">
                                     <h4 class="text-lg font-bold text-slate-900 break-words" x-text="app.name"></h4>
                                     <span class="text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2 py-1 rounded flex-shrink-0">HTML5</span>
@@ -544,12 +607,12 @@
                     <h3 id="resources-heading" class="text-xl font-bold text-slate-900">Documents &amp; Resources</h3>
                     <p class="text-slate-600 mt-1 text-sm">Preview or download classroom documents, spreadsheets and presentations.</p>
                 </div>
-                <ul role="list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <ul role="list" class="library-card-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <template x-for="resource in filteredResources" :key="resource.id">
-                        <li class="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+                        <li class="resource-card bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
                             x-init="observeDownloadCounter(resource, $el)"
                             :class="isLatest(resource) ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'">
-                            <div class="p-6 flex flex-col flex-1">
+                            <div class="resource-card__body p-6 flex flex-col flex-1">
                                 <div class="flex items-start justify-between gap-4 mb-1">
                                     <div class="flex items-center gap-3 min-w-0">
                                         <div class="bg-amber-50 text-amber-700 p-2.5 rounded-lg flex-shrink-0">
@@ -2311,12 +2374,12 @@
 
         <!-- Preview Modal -->
         <div x-show="preview.open" x-cloak
-             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4"
+             class="preview-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4"
              role="dialog" aria-modal="true" aria-labelledby="preview-title"
              @keydown.escape.window="closePreview()">
-            <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden"
+            <div class="preview-modal bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden"
                  @click.outside="closePreview()">
-                <div class="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-200">
+                <div class="preview-modal__header flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-200">
                     <div class="min-w-0">
                         <h2 id="preview-title" class="font-bold text-slate-900 truncate" x-text="preview.item?.name || 'Preview'"></h2>
                         <p class="text-xs text-slate-400 truncate">
@@ -2381,7 +2444,7 @@
                     </template>
                 </div>
 
-                <p class="px-5 py-2.5 text-[11px] text-slate-400 border-t border-slate-100 bg-white">
+                <p class="preview-modal__footer px-5 py-2.5 text-[11px] text-slate-400 border-t border-slate-100 bg-white">
                     Previews run in a sandboxed frame. Download the file for full functionality and offline use.
                 </p>
             </div>
@@ -2389,15 +2452,15 @@
 
         <!-- Administrator sign-in (the shared teacher login has been removed) -->
         <div x-show="toast.visible" x-cloak role="status" aria-live="polite"
-             class="fixed bottom-4 left-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-xl border px-4 py-3 text-sm font-medium shadow-xl"
+             class="site-toast fixed bottom-4 left-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-xl border px-4 py-3 text-sm font-medium shadow-xl"
              :class="toast.tone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : (toast.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-700')"
              x-text="toast.message"></div>
 
         <div x-show="showLogin" x-cloak
-             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+             class="login-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
              role="dialog" aria-modal="true" aria-labelledby="login-title"
              @keydown.escape.window="showLogin = false">
-            <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-sm p-6" @click.outside="showLogin = false">
+            <div class="login-modal bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-sm p-6" @click.outside="showLogin = false">
                 <div class="flex items-center gap-2 mb-1">
                     <div class="p-2 rounded-lg bg-indigo-600 text-white"><i data-lucide="shield" class="w-4 h-4" aria-hidden="true"></i></div>
                     <h2 id="login-title" class="text-lg font-bold">Administrator Sign In</h2>
