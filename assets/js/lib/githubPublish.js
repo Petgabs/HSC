@@ -1,7 +1,16 @@
+import { sha256Hex } from './uploadSafety.js';
+
 const API_ROOT = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 const REQUEST_TIMEOUT_MS = 20_000;
+// A large resource (up to 50 MB, base64-encoded in one commit) can take far
+// longer than a metadata read on a school connection. File writes therefore
+// use their own, much longer budget so a slow-but-healthy upload is not
+// aborted halfway and reported to the administrator as a failure.
+const FILE_REQUEST_TIMEOUT_MS = 240_000;
 const MAX_CONFLICT_RETRIES = 3;
+const MAX_TRANSPORT_RETRIES = 2;
+const TRANSPORT_RETRY_DELAYS_MS = [700, 2_000];
 export const PUBLISH_TOKEN_SECRET_NAME = 'SCHOOLCLOUD_PUBLISH_TOKEN';
 
 function encodePath(path) {
@@ -26,7 +35,7 @@ function decodeBase64Bytes(value) {
   return bytes;
 }
 
-export function encodeBase64Bytes(bytes) {
+export function encodeBase64Bytes(bytes, { onProgress } = {}) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const chunkSize = 0x8000;
   let binary = '';
@@ -35,7 +44,13 @@ export function encodeBase64Bytes(bytes) {
     for (let index = 0; index < chunk.length; index += 1) {
       binary += String.fromCharCode(chunk[index]);
     }
+    // Encoding a 50 MB file is real work on a school laptop; reporting it keeps
+    // the upload dialog honest instead of looking frozen.
+    if (typeof onProgress === 'function' && (offset / chunkSize) % 16 === 0) {
+      onProgress(Math.min(1, (offset + chunkSize) / data.length));
+    }
   }
+  onProgress?.(1);
   return btoa(binary);
 }
 
@@ -64,12 +79,13 @@ function apiUrl(owner, repo, path = '') {
 }
 
 async function request(url, token, options = {}) {
+  const { timeoutMs = REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
-      ...options,
-      headers: { ...headersFor(token, options.body !== undefined), ...options.headers },
+      ...fetchOptions,
+      headers: { ...headersFor(token, fetchOptions.body !== undefined), ...fetchOptions.headers },
       cache: 'no-store',
       credentials: 'omit',
       signal: controller.signal
@@ -87,17 +103,54 @@ async function request(url, token, options = {}) {
       const error = new Error(body?.message || `GitHub returned HTTP ${response.status}.`);
       error.status = response.status;
       error.response = body;
+      error.transient = response.status === 429 || response.status >= 500;
       throw error;
     }
     return body;
   } catch (error) {
     if (error?.name === 'AbortError') {
-      throw new Error('GitHub did not respond in time. Check your connection and retry.');
+      const timeoutError = new Error('GitHub did not respond in time. Check your connection and retry.');
+      timeoutError.transient = true;
+      timeoutError.timedOut = true;
+      throw timeoutError;
     }
+    // A dropped connection surfaces as a bare TypeError from fetch. It is the
+    // most common failure on school Wi-Fi and is worth one quiet retry.
+    if (error instanceof TypeError) error.transient = true;
     throw error;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+const RETRYABLE_METHODS = new Set(['GET', 'PUT', 'HEAD']);
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * `request`, with a small exponential backoff for transient failures.
+ *
+ * Only idempotent-by-value requests are retried: reads, and writes whose body
+ * is a complete replacement. A DELETE is never retried, and a retried PUT that
+ * actually landed the first time comes back as a 409/422 which the callers
+ * resolve by comparing the stored content with what they sent.
+ */
+async function requestWithRetry(url, token, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const retryable = RETRYABLE_METHODS.has(method);
+  let lastError = null;
+  for (let attempt = 0; attempt <= (retryable ? MAX_TRANSPORT_RETRIES : 0); attempt += 1) {
+    try {
+      return await request(url, token, options);
+    } catch (error) {
+      lastError = error;
+      if (!retryable || !error?.transient || attempt >= MAX_TRANSPORT_RETRIES) throw error;
+      await sleep(TRANSPORT_RETRY_DELAYS_MS[Math.min(attempt, TRANSPORT_RETRY_DELAYS_MS.length - 1)]);
+    }
+  }
+  throw lastError || new Error('The GitHub request failed.');
 }
 
 export async function verifyGitHubToken({ token, owner, repo }) {
@@ -200,20 +253,117 @@ export async function listRepositoryFiles({ owner, repo, branch = 'main' }) {
 async function readContents({ owner, repo, branch, path, token }) {
   const query = new URLSearchParams({ ref: branch });
   try {
-    return await request(apiUrl(owner, repo, `contents/${encodePath(path)}?${query}`), token);
+    return await requestWithRetry(apiUrl(owner, repo, `contents/${encodePath(path)}?${query}`), token);
   } catch (error) {
     if (error.status === 404) return null;
     throw error;
   }
 }
 
-async function putContents({ owner, repo, branch, path, token, content, message, sha }) {
+async function putContents({ owner, repo, branch, path, token, content, message, sha, timeoutMs = REQUEST_TIMEOUT_MS }) {
   const body = { message, content, branch };
   if (sha) body.sha = sha;
-  return request(apiUrl(owner, repo, `contents/${encodePath(path)}`), token, {
+  return requestWithRetry(apiUrl(owner, repo, `contents/${encodePath(path)}`), token, {
     method: 'PUT',
+    timeoutMs,
     body: JSON.stringify(body)
   });
+}
+
+/**
+ * The bytes of a file already in the repository. The Contents API inlines only
+ * small files, so anything larger is fetched through the Git Blobs API using
+ * the blob SHA the Contents API reports. Returns `{ bytes }`, `{ unreadable: true }`
+ * or `{ missing: true }` — never throws for a file that simply cannot be read.
+ */
+async function readStoredBytes({ owner, repo, token, file }) {
+  if (!file) return { missing: true };
+  try {
+    if (file.content && file.encoding !== 'none') {
+      return { bytes: decodeBase64Bytes(file.content) };
+    }
+    if (!file.sha) return { unreadable: true };
+    const blob = await requestWithRetry(apiUrl(owner, repo, `git/blobs/${encodeURIComponent(file.sha)}`), token);
+    if (!blob?.content) return { unreadable: true };
+    return { bytes: decodeBase64Bytes(blob.content) };
+  } catch {
+    return { unreadable: true };
+  }
+}
+
+async function digestOfStoredFile({ owner, repo, token, file }) {
+  const stored = await readStoredBytes({ owner, repo, token, file });
+  if (!stored.bytes) return '';
+  return sha256Hex(stored.bytes);
+}
+
+/**
+ * Write the file, and — if the connection drops or the write conflicts —
+ * establish what actually happened before reporting failure.
+ *
+ * GitHub's Contents API rejects a second write with 409/422, and a timed-out
+ * write may well have landed. Comparing the stored digest with the digest of
+ * the file in the administrator's browser turns both cases into an accurate
+ * answer instead of a scary (and wrong) "already exists" error.
+ */
+async function putUploadedFile({ owner, repo, branch, path, token, content, message, digest, onProgress }) {
+  try {
+    return await putContents({
+      owner, repo, branch, path, token, content, message, timeoutMs: FILE_REQUEST_TIMEOUT_MS
+    });
+  } catch (error) {
+    const inconclusive = [409, 422].includes(Number(error?.status)) || Boolean(error?.transient);
+    if (!inconclusive) throw error;
+    onProgress?.({ stage: 'recovering', percent: 55, detail: 'The connection was interrupted. Checking whether GitHub stored the file…' });
+    const stored = await readContents({ owner, repo, branch, path, token });
+    if (!stored) throw error;
+    const storedDigest = await digestOfStoredFile({ owner, repo, token, file: stored });
+    if (storedDigest && digest && storedDigest === digest) {
+      return {
+        recovered: true,
+        content: { name: stored.name, path: stored.path, sha: stored.sha, download_url: stored.download_url || '' }
+      };
+    }
+    if (storedDigest) {
+      throw new Error(`A file named “${path.slice('apps/'.length)}” is already in apps/. Rename the new file before uploading; existing files are never overwritten.`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Remove a file and its metadata entry after a failed verification. Best
+ * effort only: the caller reports the rollback outcome either way, and a
+ * half-removed upload is still visible to the administrator in GitHub.
+ */
+async function rollbackUpload({ owner, repo, branch, path, token, name }) {
+  let fileRemoved = false;
+  try {
+    const file = await readContents({ owner, repo, branch, path, token });
+    if (file?.sha) {
+      await request(apiUrl(owner, repo, `contents/${encodePath(path)}`), token, {
+        method: 'DELETE',
+        body: JSON.stringify({ message: `Roll back unverified upload: ${file.name || name}`, sha: file.sha, branch })
+      });
+      fileRemoved = true;
+    }
+  } catch {
+    fileRemoved = false;
+  }
+  try {
+    await updateJson({
+      owner, repo, branch, path: 'library.json', token,
+      message: `Roll back metadata for ${name}`,
+      transform(current) {
+        if (!current || typeof current !== 'object' || Array.isArray(current)) return current || {};
+        delete current[path];
+        return current;
+      }
+    });
+  } catch {
+    // The file itself is the important part of a rollback.
+  }
+  return fileRemoved;
 }
 
 async function updateJson({ owner, repo, branch, path, token, message, transform }) {
@@ -268,7 +418,11 @@ function curatedMetadata(metadata = {}) {
   const allowed = [
     'title', 'description', 'subject', 'years', 'tags', 'keywords', 'topic',
     'resourceType', 'language', 'owner', 'department', 'academicYear',
-    'visibility', 'version', 'reviewDate', 'licence', 'accessibility', 'addedAt'
+    'visibility', 'version', 'reviewDate', 'licence', 'accessibility', 'addedAt',
+    // Integrity fields written by the uploader: the SHA-256 digest and byte
+    // count let the dashboard re-verify a published file against what the
+    // administrator chose, and let a re-upload be spotted immediately.
+    'sha256', 'bytes'
   ];
   const result = {};
   for (const key of allowed) {
@@ -278,6 +432,9 @@ function curatedMetadata(metadata = {}) {
       result[key] = key === 'years'
         ? value.map(Number).filter(year => Number.isInteger(year) && year >= 7 && year <= 12)
         : value.map(item => String(item).trim()).filter(Boolean);
+    } else if (key === 'bytes') {
+      const number = Number(value);
+      if (Number.isSafeInteger(number) && number >= 0) result[key] = number;
     } else {
       result[key] = String(value).trim();
     }
@@ -286,43 +443,77 @@ function curatedMetadata(metadata = {}) {
   return result;
 }
 
+/**
+ * Publish one resource: write the file into `apps/`, record its curated
+ * metadata (including the SHA-256 digest and byte count) in `library.json`, and
+ * then re-read both from GitHub to confirm the published bytes are exactly the
+ * bytes the administrator chose.
+ *
+ * The result reports what was verified so the interface can tell the
+ * administrator precisely what happened, rather than a generic success toast:
+ *
+ *   - `verified`            the stored bytes match the local digest
+ *   - `verificationSkipped` GitHub stored the file but it was too large to
+ *                           re-read in the browser
+ *   - `recovered`           the first write timed out, but the second read
+ *                           proved the file had in fact landed
+ *
+ * On a digest mismatch the upload is rolled back (file and metadata removed)
+ * and an error is thrown: publishing bytes that do not match the checked file
+ * would defeat the safety inspection that ran before the upload.
+ */
 export async function uploadResourceToGitHub({
   owner,
   repo,
   branch = 'main',
   token,
   file,
-  metadata
+  metadata,
+  fileBytes = null,
+  bytes = 0,
+  sha256: expectedDigest = '',
+  verify = true,
+  onProgress = null
 }) {
-  if (!file || typeof file.arrayBuffer !== 'function') throw new Error('Choose a file to upload.');
+  const report = progress => {
+    if (typeof onProgress !== 'function') return;
+    try { onProgress(progress); } catch { /* Progress reporting must never break an upload. */ }
+  };
+
+  if (!file || (typeof file.arrayBuffer !== 'function' && !fileBytes)) throw new Error('Choose a file to upload.');
   const name = sanitizeUploadName(file.name);
   const path = `apps/${name}`;
+
+  report({ stage: 'checking', percent: 4, detail: 'Checking GitHub for a file with this name…' });
   const existing = await readContents({ owner, repo, branch, path, token });
   if (existing) {
     throw new Error(`A file named “${name}” is already in apps/. Rename the new file before uploading; existing files are never overwritten.`);
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let uploaded;
-  try {
-    uploaded = await putContents({
-      owner, repo, branch, path, token,
-      content: encodeBase64Bytes(bytes),
-      message: `Publish resource: ${name}`
-    });
-  } catch (error) {
-    if ([409, 422].includes(error?.status)) {
-      const conflict = await readContents({ owner, repo, branch, path, token });
-      if (conflict) {
-        throw new Error(`A file named “${name}” is already in apps/. Rename the new file before uploading; existing files are never overwritten.`);
-      }
+  report({ stage: 'reading', percent: 10, detail: 'Reading the file from this device…' });
+  let data = fileBytes instanceof Uint8Array ? fileBytes : null;
+  if (!data) {
+    try {
+      data = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      throw new Error('The selected file could not be read. It may have been moved, renamed or is still open in another program — re-select it and try again.');
     }
-    throw error;
   }
+  const byteCount = Number(bytes) > 0 ? Number(bytes) : data.length;
+  const digest = String(expectedDigest || '').toLowerCase() || await sha256Hex(data);
 
+  report({ stage: 'encoding', percent: 20, detail: 'Preparing the upload…' });
+  const content = encodeBase64Bytes(data, {
+    onProgress: ratio => report({ stage: 'encoding', percent: 20 + Math.round((Number(ratio) || 0) * 15), detail: 'Preparing the upload…' })
+  });
+
+  report({ stage: 'uploading', percent: 38, detail: `Sending ${name} to GitHub… large files can take a minute.` });
+  const uploaded = await putUploadedFile({ owner, repo, branch, path, token, content, message: `Publish resource: ${name}`, digest, onProgress: report });
+
+  report({ stage: 'metadata', percent: 68, detail: 'Recording the library metadata…' });
   let metadataCommit = null;
   try {
-    const entry = curatedMetadata(metadata);
+    const entry = curatedMetadata({ ...metadata, sha256: digest || undefined, bytes: byteCount });
     metadataCommit = await updateJson({
       owner, repo, branch, path: 'library.json', token,
       message: `Add library metadata for ${name}`,
@@ -340,11 +531,75 @@ export async function uploadResourceToGitHub({
     throw error;
   }
 
+  const verification = { verified: false, skipped: false, message: '', storedDigest: '' };
+  if (verify && digest) {
+    report({ stage: 'verifying', percent: 85, detail: 'Re-reading the published file to confirm it matches…' });
+    const stored = await readContents({ owner, repo, branch, path, token });
+    const storedBytes = stored ? await readStoredBytes({ owner, repo, token, file: stored }) : { missing: true };
+    if (storedBytes.unreadable) {
+      verification.skipped = true;
+      verification.message = 'GitHub stored the file, but it is larger than this browser re-reads, so the byte-for-byte check could not be completed.';
+    } else if (!storedBytes.bytes) {
+      verification.skipped = true;
+      verification.message = 'The published file could not be re-read straight away. It will appear after GitHub Pages deploys; check it from the dashboard when convenient.';
+    } else {
+      verification.storedDigest = await sha256Hex(storedBytes.bytes);
+      if (verification.storedDigest && verification.storedDigest !== digest) {
+        const rolledBack = await rollbackUpload({ owner, repo, branch, path, token, name });
+        const error = new Error(rolledBack
+          ? 'The bytes GitHub stored did not match the file on this device, so the upload was removed again and nothing was published. Please try once more.'
+          : 'The bytes GitHub stored did not match the file on this device. The file was not published; remove it manually in GitHub if it still appears.');
+        error.digestMismatch = true;
+        error.rolledBack = rolledBack;
+        throw error;
+      }
+      verification.verified = Boolean(verification.storedDigest);
+      if (!verification.verified) verification.message = 'The published file was re-read but its digest could not be recomputed in this browser.';
+    }
+  } else if (!digest) {
+    verification.skipped = true;
+    verification.message = 'This browser cannot compute SHA-256, so the upload could not be verified byte-for-byte.';
+  }
+
+  // Confirm the metadata record is really there — a file with no library entry
+  // is invisible to students, which is exactly the sort of silent half-success
+  // this verification step exists to catch.
+  if (verify) {
+    const library = await readContents({ owner, repo, branch, path: 'library.json', token });
+    let recorded = null;
+    if (library?.content) {
+      try {
+        recorded = JSON.parse(decodeBase64Text(library.content))?.[path] || null;
+      } catch {
+        recorded = null;
+      }
+    }
+    if (!recorded) throw Object.assign(
+      new Error('The file was stored, but its library.json metadata could not be confirmed. Check library.json in GitHub, or delete and re-upload the file.'),
+      { uploadedPath: path, uploadCommitUrl: uploaded?.commit?.html_url || '' }
+    );
+    verification.metadataVerified = true;
+    if (digest && recorded.sha256 && String(recorded.sha256).toLowerCase() !== digest) {
+      throw Object.assign(
+        new Error('The recorded metadata does not match this file. Nothing was deleted — check library.json in GitHub before trying again.'),
+        { uploadedPath: path, metadataMismatch: true }
+      );
+    }
+  }
+
+  report({ stage: 'done', percent: 100, detail: 'Published and verified.' });
   return {
     path,
     name,
     downloadUrl: uploaded?.content?.download_url || '',
-    commitUrl: metadataCommit?.commit?.html_url || uploaded?.commit?.html_url || ''
+    commitUrl: metadataCommit?.commit?.html_url || uploaded?.commit?.html_url || '',
+    sha256: digest,
+    bytes: byteCount,
+    verified: verification.verified,
+    verificationSkipped: verification.skipped,
+    verificationMessage: verification.message || '',
+    metadataVerified: Boolean(verification.metadataVerified),
+    recovered: Boolean(uploaded?.recovered)
   };
 }
 

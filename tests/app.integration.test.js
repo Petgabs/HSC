@@ -409,10 +409,18 @@ describe('School Cloud page integration', () => {
       const getCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/get/'));
       const fileGetCalls = () => getCalls().filter(([url]) => String(url).includes('download-'));
       const visitorGetCalls = () => getCalls().filter(([url]) => String(url).includes('/visitors'));
+      const presenceGetCalls = () => getCalls().filter(([url]) => String(url).includes('admin-online-'));
       expect(state?.apps).toHaveLength(2);
       expect(observers).toHaveLength(1);
       expect(observers[0].targets.size).toBe(2);
-      expect(getCalls()).toHaveLength(0);
+      // Nothing has been read for the files yet: the only counter reads are
+      // the live admin-presence buckets (at most the current and previous one).
+      expect(fileGetCalls()).toHaveLength(0);
+      expect(visitorGetCalls()).toHaveLength(0);
+      expect(getCalls()).toHaveLength(presenceGetCalls().length);
+      expect(presenceGetCalls().length).toBeLessThanOrEqual(2);
+      expect(presenceGetCalls()[0][0]).toMatch(/\/get\/petgabs-hsc-schoolcloud\/admin-online-\d+$/);
+      expect(state.adminPresenceLive).toBe(true);
 
       const visibleCard = [...observers[0].targets][0];
       const visibleItem = visibleCard._schoolCloudCounterItem;

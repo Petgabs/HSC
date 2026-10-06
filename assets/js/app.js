@@ -17,6 +17,14 @@ import {
   visibilityLabel
 } from './lib/format.js';
 import { canPreviewItem, previewDescriptor } from './lib/preview.js';
+import { ADMIN_ACTION_LIMITS, RateLimiter, createExclusiveRunner, formatRetryAfter } from './lib/guard.js';
+import {
+  AdminPresenceBeacon, PRESENCE_BUCKET_MS, PRESENCE_WINDOW_MS, describePresence, localPresenceIsLive,
+  presenceBucketIndex
+} from './lib/presence.js';
+import {
+  findDigestMatch, formatDigest, inspectUpload, readFileBytes, sha256Hex as sha256HexBytes, suggestAvailableFileName
+} from './lib/uploadSafety.js';
 
 const LEGACY_TOKEN_KEYS = [
   'schoolcloud.githubToken', 'schoolCloud.githubToken', 'schoolcloud.github-token',
@@ -42,6 +50,24 @@ const USERNAME_PATTERN = /^[A-Za-z0-9._@+-]{3,64}$/;
 const FETCH_RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const FETCH_RETRY_DELAYS_MS = [350, 900];
 const CRASH_NOTICE_THROTTLE_MS = 10_000;
+// Presence: one heartbeat per minute, and a fresh read at most every 30
+// seconds. Together that keeps the shared counter traffic tiny while the
+// indicator stays live.
+const PRESENCE_HEARTBEAT_MS = PRESENCE_BUCKET_MS;
+const PRESENCE_REFRESH_MS = 30_000;
+// After this long an upload is clearly not instant, so the dialog explains
+// that a large file over a school connection simply takes a while.
+const UPLOAD_SLOW_NOTICE_MS = 12_000;
+const UPLOAD_STAGE_LABELS = Object.freeze({
+  checking: 'Checking GitHub',
+  reading: 'Reading the file',
+  encoding: 'Preparing the upload',
+  uploading: 'Uploading to GitHub',
+  recovering: 'Confirming an interrupted upload',
+  metadata: 'Recording library metadata',
+  verifying: 'Verifying the published file',
+  done: 'Published'
+});
 
 function parseRepoName(value, fallbackOwner, fallbackName) {
   const match = String(value || '').trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
@@ -315,6 +341,27 @@ function schoolCloud() {
     uploadMessage: '',
     uploadMessageTone: 'info',
     submitting: false,
+    // Upload progress and the safety report for the chosen file. The
+    // administrator always sees which step is running, how far it has got and
+    // what was inspected, so a slow connection is never mistaken for a hang.
+    uploadStage: '',
+    uploadStageLabel: '',
+    uploadPercent: 0,
+    uploadDetail: '',
+    uploadElapsedSeconds: 0,
+    uploadChecks: [],
+    uploadWarnings: [],
+    uploadResult: null,
+    uploadAcknowledgedWarnings: false,
+    uploadVerify: true,
+    // Live administrator presence: time-bucket heartbeats only, never a name.
+    presence: {
+      live: false, unknown: true, label: 'Checking…',
+      detail: 'Checking whether an administrator is online…',
+      tone: 'unknown', checkedAt: 0, lastSeenAt: 0, source: ''
+    },
+    rateLimit: { blocked: {}, message: '', tone: 'info' },
+    verifyingAppId: '',
     formOptions: {
       subjects: [...SUBJECTS],
       yearLevels: YEAR_LEVELS.map(String),
@@ -342,6 +389,20 @@ function schoolCloud() {
     _counterReadAt: {},
     _loadSequence: 0,
     _loadPromise: null,
+    _limiter: new RateLimiter({ limits: ADMIN_ACTION_LIMITS }),
+    _exclusive: createExclusiveRunner(),
+    _presenceBeacon: null,
+    _presenceTimer: null,
+    _presenceHeartbeatTimer: null,
+    _presenceReadAt: 0,
+    _presenceReadPromise: null,
+    _rateLimitTimer: null,
+    _uploadUnloadHandler: null,
+    _uploadSlowTimer: null,
+    _uploadStartedAt: 0,
+    _inspectSequence: 0,
+    _draftBytes: null,
+    _draftDigest: '',
     _initialized: false,
     _lastCrashNoticeAt: 0,
     _dismissedIntegrityIssueIds: [],
@@ -379,6 +440,30 @@ function schoolCloud() {
     get cloudAppCount() { return this.apps.length; },
     get recentUploadCount() { return this.apps.filter(item => calculateAgeDays(item?.addedAt || item?.meta?.addedAt) <= 30).length; },
     get autoPublishReady() { return this.githubAuth.connected && Boolean(this.githubAuth.activeToken); },
+    get adminPresenceLive() { return Boolean(this.presence.live); },
+    get presenceDotClass() {
+      if (this.presence.tone === 'online') return 'bg-emerald-500';
+      if (this.presence.tone === 'unknown') return 'bg-slate-400';
+      return 'bg-slate-300';
+    },
+    get presencePillClass() {
+      if (this.presence.tone === 'online') return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+      if (this.presence.tone === 'unknown') return 'bg-slate-100 text-slate-500 ring-slate-200';
+      return 'bg-slate-100 text-slate-500 ring-slate-200';
+    },
+    get uploadProgressLabel() {
+      if (this.uploadStageLabel) return this.uploadStageLabel;
+      return this.submitting ? 'Publishing…' : '';
+    },
+    get uploadNeedsAcknowledgement() {
+      return this.uploadWarnings.length > 0 && !this.uploadAcknowledgedWarnings;
+    },
+    get uploadDigestLabel() {
+      return this.uploadResult?.sha256 ? formatDigest(this.uploadResult.sha256, 16) : '';
+    },
+    get fingerprintedFileCount() {
+      return this.apps.filter(item => String(item?.meta?.sha256 || '')).length;
+    },
     get repositoryTarget() {
       return parseRepoName(this.githubConfig.repo, SITE_CONFIG.repository.owner, SITE_CONFIG.repository.name);
     },
@@ -630,6 +715,10 @@ function schoolCloud() {
       this.refreshIcons();
       await Promise.allSettled([this.loadLibrary(), this.countVisitor()]);
       this.updateIntegrityReport();
+      this.initPresence();
+      // A lockout recorded in localStorage is still in force after a reload.
+      this.refreshRateLimitState();
+      if (Object.keys(this.rateLimit.blocked).length) this.startRateLimitTicker();
       this.refreshIcons();
     },
 
@@ -1071,7 +1160,14 @@ function schoolCloud() {
         this.openCloudSettings();
         return;
       }
-      if (this.statsSyncing) return;
+      if (this.statsSyncing) {
+        this.notify('The counts are already being saved. Please wait for that save to finish.', 'info');
+        return;
+      }
+      if (!this.guardAction('sync')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
       this.statsSyncing = true;
       try {
         // Refresh both the site-wide visitor total and per-file totals before
@@ -1115,6 +1211,10 @@ function schoolCloud() {
 
     async refreshStats() {
       if (this.stats.loadingDownloads) return;
+      if (!this.guardAction('refresh')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
       await Promise.all([
         this.countVisitor(),
         this.loadDownloadCounters(this.apps, true)
@@ -1198,6 +1298,10 @@ function schoolCloud() {
     },
     async login() {
       if (this.checkingLogin) return;
+      if (!this.guardAction('login')) {
+        this.loginError = this.rateLimit.message;
+        return;
+      }
       this.checkingLogin = true;
       this.loginError = '';
       try {
@@ -1207,9 +1311,14 @@ function schoolCloud() {
           return;
         }
         if (!result.ok) {
+          // Wrong passwords get slower every time, and repeated guessing is
+          // locked out by the rate limiter above.
+          const delay = this.registerFailedAttempt('login');
+          if (delay > 0) await sleep(delay);
           this.loginError = 'The username or password is incorrect.';
           return;
         }
+        this.clearRateLimit('login');
         this.isAdmin = true;
         try { sessionStorage.setItem(ADMIN_LOGIN_SESSION_KEY, SITE_CONFIG.admin.username); } catch { /* Current tab stays signed in. */ }
         // Reconnect the token saved on this device (and quietly re-check it)
@@ -1217,6 +1326,9 @@ function schoolCloud() {
         if (this.restoreSavedGithubToken()) this.verifySavedGithubToken();
         this.showLogin = false;
         this.loginForm.password = '';
+        // Announce presence straight away so the indicator lights up for
+        // students and other administrators without waiting for the interval.
+        this.startAdminPresenceHeartbeat();
         this.openDashboard();
       } catch (error) {
         this.loginError = error?.message || 'Could not check the admin sign-in.';
@@ -1225,6 +1337,7 @@ function schoolCloud() {
       }
     },
     logout() {
+      this.stopAdminPresenceHeartbeat();
       this.isAdmin = false;
       this.githubAuth.activeToken = '';
       this.githubAuth.token = '';
@@ -1331,10 +1444,16 @@ function schoolCloud() {
         this.openCloudSettings();
         return;
       }
+      if (this.deletingAppId) return;
       if (!window.confirm(`Delete “${item.name}” from GitHub (file, library metadata and saved download counts) and the public library? This cannot be undone.`)) return;
       this.deleteGithubResource(item);
     },
     async deleteGithubResource(item) {
+      if (this.deletingAppId) return;
+      if (!this.guardAction('delete')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
       this.deletingAppId = item.id;
       const target = this.repositoryTarget;
       const branch = this.githubConfig.branch || SITE_CONFIG.repository.branch;
@@ -1455,6 +1574,13 @@ function schoolCloud() {
     setDraftFile(file) {
       this.draftErrors.file = '';
       this.uploadMessage = '';
+      this.uploadChecks = [];
+      this.uploadWarnings = [];
+      this.uploadAcknowledgedWarnings = false;
+      this.uploadResult = null;
+      this._draftBytes = null;
+      this._draftDigest = '';
+      this._inspectSequence += 1;
       if (!file) return;
       if (!isSupportedFile(file.name)) {
         this.draftErrors.file = 'Use an HTML, PDF, Word, Excel or PowerPoint file.';
@@ -1471,6 +1597,9 @@ function schoolCloud() {
       const guessed = inferMetadata(file.name);
       if (!this.draft.subject && guessed.subject !== 'Others') this.draft.subject = guessed.subject;
       if (!this.draft.years && guessed.years.length) this.draft.years = String(guessed.years[0]);
+      // Inspect the bytes for real type, embedded programs and unsafe HTML. The
+      // report is ready before the administrator reaches the publish button.
+      this.inspectSelectedFile();
       this.refreshIcons();
     },
     handleFileChange(event) { this.setDraftFile(event?.target?.files?.[0] || null); },
@@ -1493,6 +1622,9 @@ function schoolCloud() {
 
     async submitResource() {
       if (!this.isAdmin) return this.openLogin('admin');
+      // A second click while an upload is running must never start a second
+      // upload of the same file.
+      if (this.submitting) return;
       this.draftErrors = { file: '', title: '', subject: '', years: '', owner: '' };
       this.uploadMessage = '';
       if (!this.draftFile) this.draftErrors.file = 'Choose a file to publish.';
@@ -1506,6 +1638,11 @@ function schoolCloud() {
       }
       const invalid = Object.values(this.draftErrors).some(Boolean) || Boolean(this.uploadMessage);
       if (invalid) return;
+      if (this.uploadNeedsAcknowledgement) {
+        this.uploadMessageTone = 'error';
+        this.uploadMessage = 'Review the safety findings for this file and tick the acknowledgement before publishing.';
+        return;
+      }
       if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
         this.uploadMessage = 'Connect a GitHub Personal Access Token in Settings first. It needs Contents: Read and write access to this repository.';
         this.uploadMessageTone = 'error';
@@ -1515,9 +1652,31 @@ function schoolCloud() {
         this.draftErrors.file = 'Files must be 50 MB or smaller.';
         return;
       }
+      // Repeated-click and rate protection: the attempt is recorded before any
+      // work starts, so double-clicking or clicking again after a failure
+      // cannot queue up several publishes.
+      if (!this.guardAction('upload')) {
+        this.uploadMessageTone = 'error';
+        this.uploadMessage = this.rateLimit.message;
+        return;
+      }
+      if (!this._exclusive.begin('upload')) {
+        this.uploadMessageTone = 'info';
+        this.uploadMessage = 'An upload is already running. Wait for it to finish before starting another.';
+        return;
+      }
 
       this.submitting = true;
       this.uploadMessage = '';
+      this.uploadResult = null;
+      this.uploadPercent = 0;
+      this.uploadStage = 'reading';
+      this.uploadStageLabel = UPLOAD_STAGE_LABELS.reading;
+      this.uploadDetail = 'Reading the file from this device…';
+      this.uploadAcknowledgedWarnings = false;
+      this.armUploadUnloadGuard();
+      this.startUploadTimer();
+
       const keywords = String(this.draft.keywords || '').split(',').map(value => value.trim()).filter(Boolean);
       const metadata = {
         title: this.draft.title.trim(),
@@ -1541,24 +1700,60 @@ function schoolCloud() {
       };
       const target = this.repositoryTarget;
       try {
+        const bytes = this._draftBytes instanceof Uint8Array
+          ? this._draftBytes
+          : await readFileBytes(this.draftFile, {
+            onProgress: ({ loaded, total }) => {
+              if (total > 0) this.uploadDetail = `Reading the selected file… ${Math.round(loaded / total * 100)}%`;
+            }
+          });
+        this._draftBytes = bytes;
+
+        // Everything sent to GitHub is re-checked against the exact bytes held
+        // in memory: nothing is published that has not just passed the scan.
+        const report = await inspectUpload({ name: this.draftFile.name, bytes });
+        this.uploadChecks = report.checks;
+        this.uploadWarnings = report.warnings;
+        if (!report.ok) {
+          this.draftErrors.file = report.errors.join(' ');
+          throw new Error('The file did not pass the safety checks, so nothing was sent to GitHub.');
+        }
+        if (report.warnings.length && !this.uploadAcknowledgedWarnings) {
+          throw new Error('The safety scan found something to review. Check the findings below, tick the acknowledgement, then publish again.');
+        }
+        const digest = report.digest || this._draftDigest || await sha256HexBytes(bytes);
+        this._draftDigest = digest;
+
         const result = await uploadResourceToGitHub({
           owner: target.owner,
           repo: target.name,
           branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
           token: this.githubAuth.activeToken,
           file: this.draftFile,
-          metadata
+          metadata,
+          fileBytes: bytes,
+          bytes: bytes.length,
+          sha256: digest,
+          verify: this.uploadVerify !== false,
+          onProgress: progress => this.applyUploadProgress(progress)
         });
+        this.uploadResult = { ...result, fileSize: bytes.length };
+
+        // Show the new resource on this device immediately; the published
+        // manifest follows when GitHub Pages finishes deploying.
         const item = normalizeLibraryEntry({
           type: 'file', name: result.name, path: result.path,
-          download_url: result.downloadUrl, size: this.draftFile.size
-        }, metadata);
+          download_url: result.downloadUrl, size: bytes.length
+        }, { ...metadata, sha256: result.sha256, bytes: result.bytes });
         if (item && !this.libraryItems.some(existing => existing.id === item.id)) {
           item.counterKey = downloadCounterKey(item.path);
           this.libraryItems = [...this.libraryItems, item];
           this.stats.downloads[item.id] = 0;
         }
-        this.notify(`“${item?.name || result.name}” was stored in GitHub cloud storage and published successfully. The site will show the file everywhere after GitHub Pages finishes deploying.`, 'success');
+        this.notify(
+          `“${item?.name || result.name}” was stored in GitHub cloud storage and published successfully.${this.uploadVerificationNote(result)}`,
+          'success'
+        );
         this.resetDraft();
         this.currentView = 'library';
         this.updateIntegrityReport();
@@ -1570,22 +1765,45 @@ function schoolCloud() {
         this.uploadMessageTone = 'error';
         this.uploadMessage = error.uploadedPath
           ? `The file was uploaded to ${error.uploadedPath}, but library metadata could not be updated: ${error.message}`
-          : (error.message || 'The upload failed. Check the connection and retry.');
+          : `${error.message || 'The upload failed.'} Your file is still selected, so nothing needs re-entering — check the connection (and that you are still online) and press Publish again.`;
+        this.uploadDetail = '';
       } finally {
         this.submitting = false;
+        this._exclusive.end('upload');
+        this.stopUploadTimer();
+        this.releaseUploadUnloadGuard();
+        this.uploadStage = '';
+        this.uploadStageLabel = '';
+        this.refreshRateLimitState();
+        this.refreshIcons();
       }
     },
+
     resetDraft() {
       if (this.draftFilePreview?.src?.startsWith('blob:')) URL.revokeObjectURL(this.draftFilePreview.src);
       this.draft = emptyDraft();
       this.draftFile = null;
       this.draftFilePreview = null;
       this.draftErrors = { file: '', title: '', subject: '', years: '', owner: '' };
+      // The uploaded bytes and safety report describe the file that was just
+      // published; `uploadResult` is kept as the verification receipt.
+      this.uploadChecks = [];
+      this.uploadWarnings = [];
+      this.uploadAcknowledgedWarnings = false;
+      this.uploadPercent = 0;
+      this._draftBytes = null;
+      this._draftDigest = '';
+      this._inspectSequence += 1;
       const input = document.getElementById('resource-file');
       if (input) input.value = '';
     },
 
     async saveSettings() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      if (!this.guardAction('settings')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
       const target = parseRepoName(this.githubConfig.repo, '', '');
       if (!target.owner || !target.name) {
         this.notify('Enter the repository as owner/name, for example Petgabs/HSC.', 'error');
@@ -1603,6 +1821,10 @@ function schoolCloud() {
     async connectGithub() {
       if (!this.isAdmin) return this.openLogin('admin');
       if (this.githubAuth.verifying) return;
+      if (!this.guardAction('token')) {
+        this.githubAuth.error = this.rateLimit.message;
+        return;
+      }
       this.githubAuth.error = '';
       const token = String(this.githubAuth.token || '').trim();
       if (!token) {
@@ -1650,6 +1872,10 @@ function schoolCloud() {
     async saveGithubSecret() {
       if (!this.isAdmin) return this.openLogin('admin');
       if (this.githubAuth.verifying) return;
+      if (!this.guardAction('token')) {
+        this.githubAuth.error = this.rateLimit.message;
+        return;
+      }
       const token = String(this.githubAuth.activeToken || '').trim();
       if (!this.githubAuth.connected || !token) {
         this.githubAuth.error = 'Connect a GitHub token on this device before saving the cloud secret.';
@@ -1723,6 +1949,10 @@ function schoolCloud() {
         this.adminAccount.error = 'Enter the master password to open Cloud Settings.';
         return;
       }
+      if (!this.guardAction('master')) {
+        this.adminAccount.error = this.rateLimit.message;
+        return;
+      }
       this.adminAccount.checking = true;
       const attempt = ++this.adminAccount.unlockAttempt;
       try {
@@ -1733,11 +1963,15 @@ function schoolCloud() {
           return;
         }
         if (!result.ok) {
+          const delay = this.registerFailedAttempt('master');
+          if (delay > 0) await sleep(delay);
+          if (attempt !== this.adminAccount.unlockAttempt) return;
           this.adminAccount.error = 'The master password is incorrect.';
           this.adminAccount.masterPassword = '';
           this.$nextTick(() => document.getElementById('master-password')?.focus());
           return;
         }
+        this.clearRateLimit('master');
         const focusAccount = this.adminAccount.focusAccountOnUnlock;
         this.adminAccount.masterPassword = '';
         this.adminAccount.showMasterPassword = false;
@@ -1902,12 +2136,22 @@ function schoolCloud() {
       if (this.errors.library) issues.push({ id: 'library-load', title: 'Library could not be loaded', detail: this.errors.library, action: 'Retry the library load.', severity: 'error' });
       const staleMetadata = this.metadataEntries > this.apps.length;
       if (staleMetadata) issues.push({ id: 'metadata-extra', title: 'Some metadata entries do not match published files', detail: 'Review library.json against the files currently in apps/.', action: 'Check library.json in GitHub.', severity: 'warning' });
+      const fingerprinted = this.apps.filter(item => String(item?.meta?.sha256 || '')).length;
+      const missingFingerprints = this.apps.length - fingerprinted;
+      if (missingFingerprints > 0) issues.push({
+        id: 'digest-missing',
+        title: `${missingFingerprints} published file${missingFingerprints === 1 ? '' : 's'} without a fingerprint`,
+        detail: 'Files uploaded before SHA-256 fingerprints were recorded cannot be checked byte-for-byte against the published copy.',
+        action: 'Verify a file from the dashboard, or re-upload it to record a fresh fingerprint.',
+        severity: 'warning'
+      });
       this.integrityReport = {
         status: issues.some(issue => issue.severity === 'error') ? 'error' : issues.length ? 'warning' : 'ok',
         statusLabel: issues.some(issue => issue.severity === 'error') ? 'Check needed' : issues.length ? 'Review suggested' : 'Library healthy',
         issues,
         counts: {
           publishedFiles: this.apps.length,
+          fingerprintedFiles: fingerprinted,
           metadataEntries: this.metadataEntries,
           errors: issues.filter(issue => issue.severity === 'error').length,
           warnings: issues.filter(issue => issue.severity === 'warning').length
@@ -1915,6 +2159,11 @@ function schoolCloud() {
       };
     },
     async runIntegrityTroubleshooter() {
+      if (this.integrityUi.running) return;
+      if (!this.guardAction('verify')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
       this.integrityUi.running = true;
       this.integrityUi.troubleshooterOpen = true;
       this.integrityUi.log = [];
@@ -1968,10 +2217,18 @@ function schoolCloud() {
     },
 
     async clearLocalDrafts() {
+      if (!this.guardAction('settings')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
       this.localDrafts = [];
       this.notify('Browser-only draft files were cleared.', 'success');
     },
     async clearGithubCache() {
+      if (!this.guardAction('settings')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
       try {
         const names = await caches.keys();
         await Promise.all(names.filter(name => name.startsWith('schoolcloud-data-') || name.startsWith('schoolcloud-files-')).map(name => caches.delete(name)));
@@ -1982,6 +2239,7 @@ function schoolCloud() {
     },
     async clearData() {
       if (!window.confirm('Clear School Cloud settings and cached data from this browser? This forgets the saved GitHub token on this device. GitHub files will not be deleted.')) return;
+      this._limiter.clear();
       try {
         for (const key of Object.keys(localStorage)) if (key.startsWith('schoolcloud.')) localStorage.removeItem(key);
       } catch { /* Ignore locked-down storage. */ }
@@ -2002,6 +2260,316 @@ function schoolCloud() {
     },
     onPreviewLoad() { this.loading.preview = false; this.errors.preview = ''; },
     onPreviewError() { this.loading.preview = false; this.errors.preview = 'The file preview could not be shown. Download the file instead.'; },
+    /* ---------------------------------------------------------------------
+     * Repeated-click and rate-limit protection
+     * ------------------------------------------------------------------- */
+
+    /**
+     * Check a rate limit before an administrator action runs. An allowed call
+     * is recorded immediately, so double-clicking a button cannot start two
+     * uploads, two deletes or two token checks.
+     */
+    guardAction(action) {
+      const verdict = this._limiter.attempt(action);
+      if (verdict.allowed) {
+        this.refreshRateLimitState();
+        return true;
+      }
+      const label = this._limiter.label(action);
+      this.rateLimit.message = verdict.reason === 'limit'
+        ? `Too many ${label} attempts. For safety this is paused for ${formatRetryAfter(verdict.retryAfterMs)}.`
+        : `The previous ${label} attempt was just made. Please wait ${formatRetryAfter(verdict.retryAfterMs)} before trying again.`;
+      this.rateLimit.tone = 'error';
+      this.refreshRateLimitState();
+      this.startRateLimitTicker();
+      this.notify(this.rateLimit.message, 'error');
+      return false;
+    },
+
+    /** Record a failed password attempt and return the delay to apply. */
+    registerFailedAttempt(action) {
+      const delay = this._limiter.penalize(action);
+      this.refreshRateLimitState();
+      return delay;
+    },
+
+    /** A successful action clears its failure history. */
+    clearRateLimit(action) {
+      this._limiter.reset(action);
+      if (this.rateLimit.message) this.rateLimit.message = '';
+      this.refreshRateLimitState();
+    },
+
+    blockedSeconds(action) {
+      const live = this._limiter.blockedFor(action);
+      const rendered = Number(this.rateLimit.blocked[action]) || 0;
+      return Math.ceil(Math.max(live, rendered) / 1000);
+    },
+
+    /** Button label that counts down while an action is rate limited. */
+    blockedButtonLabel(action, fallback) {
+      const seconds = this.blockedSeconds(action);
+      return seconds > 0 ? `Please wait ${seconds}s` : fallback;
+    },
+
+    actionBlocked(action, busy = false) {
+      return Boolean(busy) || this.blockedSeconds(action) > 0;
+    },
+
+    refreshRateLimitState() {
+      this.rateLimit = { ...this.rateLimit, blocked: this._limiter.blockedActions() };
+    },
+
+    startRateLimitTicker() {
+      if (this._rateLimitTimer) return;
+      this._rateLimitTimer = setInterval(() => {
+        this.refreshRateLimitState();
+        if (!Object.keys(this.rateLimit.blocked).length) {
+          clearInterval(this._rateLimitTimer);
+          this._rateLimitTimer = null;
+        }
+      }, 1_000);
+      this._rateLimitTimer?.unref?.();
+    },
+
+    /* ---------------------------------------------------------------------
+     * Live administrator presence
+     * ------------------------------------------------------------------- */
+
+    initPresence() {
+      if (!this._presenceBeacon) {
+        this._presenceBeacon = new AdminPresenceBeacon({
+          client: this._counterClient,
+          onChange: state => this.applyPresenceState(state)
+        });
+        document.addEventListener?.('visibilitychange', () => {
+          if (!document.hidden) {
+            this.refreshAdminPresence();
+            if (this.isAdmin) this.announceAdminPresence();
+          }
+        });
+        this._presenceTimer = setInterval(() => this.refreshAdminPresence(), PRESENCE_REFRESH_MS);
+        this._presenceTimer?.unref?.();
+      }
+      this.applyPresenceState(this._presenceBeacon.snapshot());
+      this.refreshAdminPresence({ force: true });
+      if (this.isAdmin) this.startAdminPresenceHeartbeat();
+    },
+
+    applyPresenceState(state) {
+      const described = describePresence({ ...state, at: Date.now() });
+      this.presence = {
+        live: Boolean(state?.live) || described.tone === 'online',
+        unknown: Boolean(state?.unknown),
+        label: described.label,
+        detail: described.detail,
+        tone: described.tone,
+        checkedAt: Number(state?.checkedAt) || 0,
+        lastSeenAt: Number(state?.lastSeenAt) || 0,
+        source: String(state?.source || '')
+      };
+    },
+
+    async refreshAdminPresence({ force = false } = {}) {
+      if (!this._presenceBeacon) return;
+      if (this._presenceReadPromise) return this._presenceReadPromise;
+      const now = Date.now();
+      if (!force && now - this._presenceReadAt < PRESENCE_REFRESH_MS) return;
+      this._presenceReadAt = now;
+      const request = this._presenceBeacon.read();
+      this._presenceReadPromise = request;
+      try {
+        await request;
+      } catch {
+        // A failed presence read keeps the last known state on screen.
+      } finally {
+        if (this._presenceReadPromise === request) this._presenceReadPromise = null;
+        this.applyPresenceState(this._presenceBeacon.snapshot());
+      }
+    },
+
+    /** One heartbeat: publishes "an administrator is here" for about a minute. */
+    async announceAdminPresence() {
+      if (!this._presenceBeacon) return;
+      try {
+        await this._presenceBeacon.announce();
+      } finally {
+        this.applyPresenceState(this._presenceBeacon.snapshot());
+      }
+    },
+
+    startAdminPresenceHeartbeat() {
+      if (!this._presenceBeacon) return;
+      this.announceAdminPresence();
+      if (this._presenceHeartbeatTimer) return;
+      this._presenceHeartbeatTimer = setInterval(() => {
+        if (this.isAdmin) this.announceAdminPresence();
+      }, PRESENCE_HEARTBEAT_MS);
+      this._presenceHeartbeatTimer?.unref?.();
+    },
+
+    stopAdminPresenceHeartbeat() {
+      if (this._presenceHeartbeatTimer) clearInterval(this._presenceHeartbeatTimer);
+      this._presenceHeartbeatTimer = null;
+      // Leave the device's own last-seen mark in place: signing out should not
+      // instantly claim no administrator was ever online here, and it expires
+      // on its own after the presence window.
+      this.refreshAdminPresence({ force: true });
+    },
+
+    presenceIsLocal() {
+      return localPresenceIsLive(this._presenceBeacon?.snapshot?.()?.lastSeenAt || 0, Date.now());
+    },
+
+    /* ---------------------------------------------------------------------
+     * Upload safety and accuracy helpers
+     * ------------------------------------------------------------------- */
+
+    async inspectSelectedFile() {
+      const file = this.draftFile;
+      if (!file) return;
+      const token = ++this._inspectSequence;
+      try {
+        const bytes = await readFileBytes(file, {
+          onProgress: ({ loaded, total }) => {
+            if (total > 0) this.uploadDetail = `Reading the selected file… ${Math.round(loaded / total * 100)}%`;
+          }
+        });
+        if (token !== this._inspectSequence || this.draftFile !== file) return;
+        this._draftBytes = bytes;
+        const report = await inspectUpload({ name: file.name, bytes });
+        if (token !== this._inspectSequence || this.draftFile !== file) return;
+        this.uploadChecks = report.checks;
+        this.uploadWarnings = [...report.warnings];
+        this._draftDigest = report.digest;
+        this.uploadDetail = '';
+
+        const publishedNames = this.apps.map(item => item.fileName || item.name || '');
+        const nameTaken = publishedNames.some(name => String(name).trim().toLowerCase() === file.name.trim().toLowerCase());
+        if (nameTaken) {
+          const suggestion = suggestAvailableFileName(file.name, publishedNames);
+          this.draftErrors.file = `“${file.name}” is already published, and existing files are never overwritten.${suggestion ? ` Rename this copy to “${suggestion}” (or give it a different version) before uploading.` : ' Rename it before uploading.'}`;
+        } else if (!report.ok) {
+          this.draftErrors.file = report.errors.join(' ');
+        } else {
+          this.draftErrors.file = '';
+          const duplicate = findDigestMatch(this.libraryMetadata, report.digest);
+          if (duplicate) {
+            this.uploadWarnings = [
+              ...this.uploadWarnings,
+              `These exact bytes are already published as “${String(duplicate).split('/').pop()}”. Publishing a duplicate is allowed but students will see the same file twice.`
+            ];
+          }
+        }
+      } catch (error) {
+        if (token !== this._inspectSequence) return;
+        this.uploadChecks = [];
+        this.draftErrors.file = error?.message || 'The selected file could not be inspected.';
+      } finally {
+        if (token === this._inspectSequence) this.refreshIcons();
+      }
+    },
+
+    applyUploadProgress({ stage, percent, detail } = {}) {
+      if (stage) this.uploadStage = stage;
+      if (stage) this.uploadStageLabel = UPLOAD_STAGE_LABELS[stage] || 'Publishing…';
+      const value = Number(percent);
+      if (Number.isFinite(value)) this.uploadPercent = Math.max(this.uploadPercent, Math.min(100, Math.round(value)));
+      if (detail) this.uploadDetail = detail;
+    },
+
+    armUploadUnloadGuard() {
+      if (this._uploadUnloadHandler) return;
+      this._uploadUnloadHandler = event => {
+        if (!this.submitting) return undefined;
+        const message = 'An upload is still running. Leaving now can leave the resource half-published.';
+        event.preventDefault();
+        event.returnValue = message;
+        return message;
+      };
+      window.addEventListener('beforeunload', this._uploadUnloadHandler);
+    },
+
+    releaseUploadUnloadGuard() {
+      if (!this._uploadUnloadHandler) return;
+      window.removeEventListener('beforeunload', this._uploadUnloadHandler);
+      this._uploadUnloadHandler = null;
+    },
+
+    startUploadTimer() {
+      const started = Date.now();
+      this._uploadStartedAt = started;
+      this.uploadElapsedSeconds = 0;
+      clearInterval(this._uploadSlowTimer);
+      this._uploadSlowTimer = setInterval(() => {
+        if (!this.submitting) return;
+        this.uploadElapsedSeconds = Math.floor((Date.now() - started) / 1000);
+      }, 1_000);
+      this._uploadSlowTimer?.unref?.();
+    },
+
+    stopUploadTimer() {
+      clearInterval(this._uploadSlowTimer);
+      this._uploadSlowTimer = null;
+    },
+
+    get uploadSlow() {
+      return this.submitting && this.uploadElapsedSeconds * 1000 >= UPLOAD_SLOW_NOTICE_MS;
+    },
+
+    uploadVerificationNote(result) {
+      if (!result) return '';
+      if (result.recovered) return ' The interrupted upload was confirmed as stored, so it was not sent twice.';
+      if (result.verified) return ` Verified: the published bytes match this device${result.sha256 ? ` (SHA-256 ${formatDigest(result.sha256, 16)})` : ''}.`;
+      if (result.verificationSkipped) return ` ${result.verificationMessage || 'The byte-for-byte check was skipped.'}`;
+      return '';
+    },
+
+    /**
+     * Re-read one published file and compare it with the fingerprint recorded
+     * at upload time. This is the accuracy counterpart to the pre-upload scan:
+     * it proves the file students download is the file the administrator
+     * approved.
+     */
+    async verifyPublishedFile(item) {
+      if (!this.isAdmin) return this.openLogin('admin');
+      if (!item) return;
+      if (item.source !== 'github') {
+        this.notify('Only files published to GitHub can be verified.', 'info');
+        return;
+      }
+      const expected = String(item.meta?.sha256 || '').toLowerCase();
+      if (!expected) {
+        this.notify(`“${item.name}” was published before fingerprints were recorded, so there is nothing to compare. Re-upload the file to record one.`, 'info');
+        return;
+      }
+      if (!this.guardAction('verify')) return;
+      this.verifyingAppId = item.id;
+      try {
+        const href = resolveFileUrl(item);
+        if (!href) throw new Error('This file has no readable published address.');
+        const url = new URL(href, window.location.href);
+        if (url.origin !== window.location.origin) {
+          throw new Error('The published copy is served from another host, which this page does not read. Verify again once GitHub Pages has deployed the file.');
+        }
+        const response = await fetch(`${url.href}${url.search ? '&' : '?'}v=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
+        if (!response.ok) throw new Error(`The published file could not be read (HTTP ${response.status}). GitHub Pages may still be deploying it — try again in a minute.`);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const digest = await sha256HexBytes(bytes);
+        if (!digest) throw new Error('This browser cannot compute SHA-256, so the file cannot be verified here.');
+        if (digest === expected) {
+          this.notify(`Verified “${item.name}”: the published file matches its recorded fingerprint (SHA-256 ${formatDigest(digest, 16)}).`, 'success');
+        } else {
+          this.notify(`“${item.name}” does NOT match the fingerprint recorded when it was published. Delete it in GitHub and upload a fresh copy.`, 'error');
+        }
+      } catch (error) {
+        this.notify(error?.message || 'The published file could not be verified.', 'error');
+      } finally {
+        this.verifyingAppId = '';
+        this.refreshIcons();
+      }
+    },
+
     notify(message, tone = 'info') {
       clearTimeout(this._toastTimer);
       this.toast = { message: String(message || ''), tone, visible: Boolean(message) };

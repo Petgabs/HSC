@@ -26,6 +26,43 @@ repository; GitHub Pages then makes them available to students.
   first save. Reloading the page, opening a new tab, closing the browser or
   signing out never asks for the token again; **Forget token on this device**
   removes it.
+- Shows a **live administrator-online indicator** in the header for everyone.
+  While an administrator is signed in, that browser sends one anonymous
+  heartbeat per minute into a time-bucket counter
+  (`.../admin-online-<minute>`); the indicator lights up whenever the current
+  or previous bucket has been hit, which means "an administrator was here
+  within about two minutes". No name, account or device detail is ever sent,
+  and the same-device tab/storage layers keep the indicator accurate and
+  instant even when the counter service is blocked.
+- Protects every administrator action against repeated clicks. Publish, delete,
+  count-sync, settings save, token connect and verification each run at most
+  once at a time, and each has its own sliding-window rate limit with a visible
+  countdown on the button (**Please wait 12s**). A limiter that trips is
+  remembered in `localStorage`, so a reload does not clear a lockout. Wrong
+  administrator or master passwords get a growing delay per attempt and a
+  5-attempts-per-10-minutes lockout, which slows guessing without ever blocking
+  the correct password.
+- Checks every upload before it is sent, then verifies it after it lands.
+  **Safety:** the bytes must really be the type the extension claims (a renamed
+  executable or a document that is actually HTML is refused), Office containers
+  are listed so a file cannot smuggle an executable or macro payload, and HTML
+  resources are scanned for code the site's security policy will not run
+  (`javascript:` and `data:` scripts are blocked; remote scripts, external
+  frames, embedded objects and storage access must be acknowledged). Empty
+  files, oversized files and duplicates of an existing file name are refused
+  with a suggested free name. **Accuracy:** the SHA-256 fingerprint and byte
+  count are recorded in `library.json`, the published bytes are re-read from
+  GitHub and compared with the file on the device (a mismatch rolls the upload
+  back), and the metadata entry is confirmed. A dashboard **Verify** button
+  re-checks any published file against its recorded fingerprint later.
+- Avoids and survives upload failures instead of reporting them wrongly.
+  Transient network failures and 5xx replies are retried with backoff, a write
+  that times out is resolved by comparing the stored digest (so a landed upload
+  is recognised, never doubled, and never reported as "already exists"), large
+  files get a much longer request budget, and the upload dialog names every
+  stage (reading, preparing, uploading, metadata, verifying), shows a progress
+  bar and elapsed seconds, warns against closing the tab mid-upload, and keeps
+  the file selected so a retry needs no re-entering.
 - Uploads supported files to `apps/` and updates `library.json` with their
   metadata through GitHub's Contents API. New files are not silently allowed to
   overwrite an existing file with the same name.
@@ -70,8 +107,14 @@ repository; GitHub Pages then makes them available to students.
    this device so it never has to be pasted again here.
 4. Use **Upload Resource**, select an HTML, PDF, Word, Excel or PowerPoint file
    (up to 50 MB), add the metadata, preview it and choose **Publish to GitHub &
-   Website**. The file is committed into `apps/`; its metadata is merged into
-   `library.json`.
+   Website**. The file is inspected first — real file type, embedded programs or
+   macros, unsafe HTML, size and duplicate names — and the findings appear as a
+   checklist on the upload page. Anything with a warning must be acknowledged
+   before the publish button unlocks, and anything unsafe is refused before a
+   single byte reaches GitHub. The file is then committed into `apps/`, its
+   metadata (including the SHA-256 fingerprint and byte count) is merged into
+   `library.json`, and the published copy is re-read from GitHub to confirm the
+   bytes match the file on the device. A mismatch rolls the upload back.
 5. GitHub Pages must be configured to publish this repository's `main` branch
    (root). Its next deployment updates `apps.json` and serves the download. A
    Pages build/deployment can take a little while after an upload.
@@ -188,6 +231,19 @@ printf 'salt: %s\npasswordHash: %s\n' "$salt" \
 Publishing that change and reloading the site is enough — no database or server
 deployment step is involved. Blank out the three fields to disable admin sign-in
 completely; blanking `SITE_CONFIG.master` disables the account section instead.
+
+## Administrator presence and the counter namespace
+
+The header's **Admin online** pill shares the same Abacus namespace as the
+counters, but never the same kind of key: presence uses a *time bucket*
+(`admin-online-<floor(epochMinutes)>`). An administrator's browser sends one
+`hit` per minute and also records the time in `localStorage`, which other tabs
+on that device pick up through a `BroadcastChannel`. A visitor reads the
+current bucket, falls back to the previous one, and shows **Admin online** when
+either has been hit; otherwise the pill reads **No admin online**, or **Admin
+status unknown** when the counter service cannot be reached. Presence costs at
+most a few tiny requests per minute, never exposes who is signed in, and a
+blocked counter service degrades to "unknown" instead of a false negative.
 
 ## Counters: live Abacus totals plus a GitHub-saved record
 

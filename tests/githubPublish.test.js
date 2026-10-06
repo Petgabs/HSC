@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import sodium from 'libsodium-wrappers';
@@ -96,8 +97,10 @@ describe('direct GitHub publishing', () => {
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer new-token');
   });
 
-  it('commits a resource into apps/ and merges curated library metadata', async () => {
+  it('commits a resource into apps/, records its digest and verifies the published bytes', async () => {
     const existingLibrary = { _comment: ['keep this comment'] };
+    const localBytes = new TextEncoder().encode('%PDF-content');
+    const digest = createHash('sha256').update(localBytes).digest('hex');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(mockResponse(404, { message: 'Not Found' }))
       .mockResolvedValueOnce(mockResponse(201, {
@@ -109,20 +112,37 @@ describe('direct GitHub publishing', () => {
       }))
       .mockResolvedValueOnce(mockResponse(200, {
         commit: { html_url: 'https://github.com/Petgabs/HSC/commit/metadata' }
+      }))
+      // Verification re-reads the published file and the metadata record.
+      .mockResolvedValueOnce(mockResponse(200, {
+        sha: 'blob-sha', content: encodeBase64Bytes(localBytes)
+      }))
+      .mockResolvedValueOnce(mockResponse(200, {
+        sha: 'library-sha-2',
+        content: base64Json({
+          'apps/Practice.pdf': { title: 'Year 12 Practice', sha256: digest, bytes: localBytes.length }
+        })
       }));
     vi.stubGlobal('fetch', fetchMock);
 
     const file = {
       name: 'Practice.pdf',
-      arrayBuffer: async () => new TextEncoder().encode('%PDF-content').buffer
+      arrayBuffer: async () => localBytes.buffer
     };
+    const stages = [];
     const result = await uploadResourceToGitHub({
       owner: 'Petgabs', repo: 'HSC', branch: 'main', token: 'secret-token', file,
-      metadata: { title: 'Year 12 Practice', years: [12], subject: 'Mathematics', tags: ['revision'] }
+      metadata: { title: 'Year 12 Practice', years: [12], subject: 'Mathematics', tags: ['revision'] },
+      onProgress: progress => stages.push(progress.stage)
     });
 
-    expect(result).toMatchObject({ path: 'apps/Practice.pdf', name: 'Practice.pdf' });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(result).toMatchObject({
+      path: 'apps/Practice.pdf', name: 'Practice.pdf',
+      sha256: digest, bytes: localBytes.length, verified: true, metadataVerified: true
+    });
+    expect(stages).toContain('uploading');
+    expect(stages).toContain('verifying');
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     const uploadRequest = fetchMock.mock.calls[1][1];
     const uploadBody = JSON.parse(uploadRequest.body);
     expect(uploadRequest.method).toBe('PUT');
@@ -136,7 +156,99 @@ describe('direct GitHub publishing', () => {
     const decoded = new TextDecoder().decode(Uint8Array.from(atob(metadataBody.content), char => char.charCodeAt(0)));
     const library = JSON.parse(decoded);
     expect(library._comment).toEqual(['keep this comment']);
-    expect(library['apps/Practice.pdf']).toMatchObject({ title: 'Year 12 Practice', years: [12], subject: 'Mathematics' });
+    expect(library['apps/Practice.pdf']).toMatchObject({
+      title: 'Year 12 Practice', years: [12], subject: 'Mathematics', sha256: digest, bytes: localBytes.length
+    });
+  });
+
+  it('rolls the upload back when the stored bytes do not match the file on this device', async () => {
+    const localBytes = new TextEncoder().encode('%PDF-original');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(404, { message: 'Not Found' }))
+      .mockResolvedValueOnce(mockResponse(201, { content: { name: 'Practice.pdf' } }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'library-sha', content: base64Json({}) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/metadata' } }))
+      // The re-read returns different bytes than the administrator chose.
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'blob-sha', content: encodeBase64Bytes(new TextEncoder().encode('%PDF-tampered')) }))
+      // Rollback: locate the file, delete it, then drop its metadata entry.
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'blob-sha', name: 'Practice.pdf' }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/rollback-file' } }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'library-sha', content: base64Json({}) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/rollback-meta' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    let failure = null;
+    try {
+      await uploadResourceToGitHub({
+        owner: 'Petgabs', repo: 'HSC', token: 'secret-token',
+        file: { name: 'Practice.pdf', arrayBuffer: async () => localBytes.buffer },
+        metadata: { title: 'Year 12 Practice' }
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeTruthy();
+    expect(failure.digestMismatch).toBe(true);
+    expect(failure.rolledBack).toBe(true);
+    expect(failure.message).toContain('nothing was published');
+    const deleteCall = fetchMock.mock.calls.find(call => call[1]?.method === 'DELETE');
+    expect(deleteCall).toBeTruthy();
+    expect(deleteCall[0]).toContain('/contents/apps/Practice.pdf');
+  });
+
+  it('retries a dropped connection instead of reporting a failed upload', async () => {
+    const localBytes = new TextEncoder().encode('%PDF-content');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(404, { message: 'Not Found' }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(mockResponse(201, {
+        content: { name: 'Practice.pdf', download_url: 'https://raw.githubusercontent.com/Petgabs/HSC/main/apps/Practice.pdf' }
+      }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'library-sha', content: base64Json({}) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/metadata' } }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'blob-sha', content: encodeBase64Bytes(localBytes) }))
+      .mockResolvedValueOnce(mockResponse(200, {
+        sha: 'library-sha-2', content: base64Json({ 'apps/Practice.pdf': { title: 'Year 12 Practice', sha256: createHash('sha256').update(localBytes).digest('hex') } })
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await uploadResourceToGitHub({
+      owner: 'Petgabs', repo: 'HSC', token: 'secret-token',
+      file: { name: 'Practice.pdf', arrayBuffer: async () => localBytes.buffer },
+      metadata: { title: 'Year 12 Practice' }
+    });
+
+    expect(result.verified).toBe(true);
+    const putCalls = fetchMock.mock.calls.filter(call => call[1]?.method === 'PUT' && String(call[0]).includes('/contents/apps/Practice.pdf'));
+    expect(putCalls).toHaveLength(2);
+  });
+
+  it('recognises an upload that landed even though the write timed out', async () => {
+    const localBytes = new TextEncoder().encode('%PDF-content');
+    const digest = createHash('sha256').update(localBytes).digest('hex');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(404, { message: 'Not Found' }))
+      // Both write attempts fail, but the file really is in the repository.
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(mockResponse(409, { message: 'sha does not match' }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'blob-sha', content: encodeBase64Bytes(localBytes) }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'library-sha', content: base64Json({}) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/metadata' } }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'blob-sha', content: encodeBase64Bytes(localBytes) }))
+      .mockResolvedValueOnce(mockResponse(200, {
+        sha: 'library-sha-2', content: base64Json({ 'apps/Practice.pdf': { title: 'Year 12 Practice', sha256: digest } })
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await uploadResourceToGitHub({
+      owner: 'Petgabs', repo: 'HSC', token: 'secret-token',
+      file: { name: 'Practice.pdf', arrayBuffer: async () => localBytes.buffer },
+      metadata: { title: 'Year 12 Practice' }
+    });
+
+    expect(result.recovered).toBe(true);
+    expect(result.verified).toBe(true);
   });
 
   it('never overwrites a same-named file', async () => {
