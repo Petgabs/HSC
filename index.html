@@ -10,16 +10,15 @@
     <!-- Defence in depth for the static deployment. Alpine's distributed
          runtime needs unsafe-eval; no inline script is permitted. Uploaded
          HTML is still rendered in a sandboxed iframe without same-origin. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.github.com https://*.supabase.co https://abacus.jasoncameron.dev; frame-src 'self' blob: https://view.officeapps.live.com; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.github.com https://abacus.jasoncameron.dev; frame-src 'self' blob: https://view.officeapps.live.com; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
 
     <!-- Locally bundled styles and scripts: no third-party CDN is required,
          so the site keeps working on restricted school networks and offline. -->
     <link rel="stylesheet" href="./assets/css/app.css">
     <script defer src="./assets/vendor/lucide.min.js"></script>
     <script type="module" src="./assets/js/app.js"></script>
-    <script defer src="./assets/vendor/alpine.min.js"></script>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans min-h-screen" x-data="schoolCloud()" x-init="init()">
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen" x-data="schoolCloud" x-init="init()">
 
     <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:bg-white focus:text-indigo-700 focus:px-4 focus:py-2 focus:rounded-lg focus:shadow-lg focus:ring-2 focus:ring-indigo-500">
         Skip to main content
@@ -45,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.7.0</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -82,21 +81,15 @@
                         class="p-2 text-slate-400 hover:text-slate-600 transition-colors focus-ring rounded-md">
                     <i data-lucide="settings" class="w-5 h-5" aria-hidden="true"></i>
                 </button>
-                <!-- Teacher sign-in: separate shared staff account for uploading resources -->
-                <button type="button" x-show="!isStaff" @click="openLogin('teacher')"
-                        class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-emerald-700 transition-colors shadow-sm focus-ring">
-                    <i data-lucide="graduation-cap" class="w-4 h-4" aria-hidden="true"></i>
-                    Teacher Login
-                </button>
                 <button type="button" x-show="!isStaff" @click="openLogin('admin')"
                         class="inline-flex items-center gap-2 border border-slate-200 text-slate-400 px-3 py-2 rounded-md text-xs font-medium hover:text-slate-700 hover:border-slate-300 transition-colors focus-ring">
                     <i data-lucide="shield" class="w-3.5 h-3.5" aria-hidden="true"></i>
                     Admin
                 </button>
                 <span x-show="isStaff" class="hidden sm:inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full text-xs font-medium"
-                      :title="isAdmin ? 'Signed in as administrator' : 'Signed in with the shared teacher account'">
-                    <i :data-lucide="isAdmin ? 'shield-check' : 'graduation-cap'" class="w-3.5 h-3.5" :class="isAdmin ? 'text-indigo-600' : 'text-emerald-600'" aria-hidden="true"></i>
-                    <span x-text="isAdmin ? 'Administrator' : 'Teacher'"></span>
+                      :title="'Signed in as administrator'">
+                    <i :data-lucide="'shield-check'" class="w-3.5 h-3.5" :class="'text-indigo-600'" aria-hidden="true"></i>
+                    <span x-text="'Administrator'"></span>
                 </span>
                 <button type="button" x-show="isStaff" @click="logout()"
                         class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors focus-ring">
@@ -445,6 +438,7 @@
                 <ul role="list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <template x-for="app in filteredMiniApps" :key="app.id">
                         <li class="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+                            x-init="observeDownloadCounter(app, $el)"
                             :class="isLatest(app) ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'">
                             <div class="p-6 flex flex-col flex-1">
                                 <div class="flex justify-between items-start gap-3 mb-1">
@@ -548,6 +542,7 @@
                 <ul role="list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <template x-for="resource in filteredResources" :key="resource.id">
                         <li class="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+                            x-init="observeDownloadCounter(resource, $el)"
                             :class="isLatest(resource) ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'">
                             <div class="p-6 flex flex-col flex-1">
                                 <div class="flex items-start justify-between gap-4 mb-1">
@@ -680,7 +675,7 @@
                 <i :data-lucide="stats.online ? 'database' : 'wifi-off'" class="w-4 h-4 mt-0.5" aria-hidden="true"></i>
                 <span x-show="stats.online">
                     Counters are served by
-                    <strong x-text="stats.backend === 'supabase' ? 'the managed database' : (stats.backend === 'abacus' ? 'the legacy counter service' : 'this browser only')"></strong>.
+                    <strong x-text="stats.backend === 'abacus' ? 'Abacus' : 'this browser only'"></strong>.
                 </span>
                 <span x-show="!stats.online">
                     Every counter backend is unreachable, so the numbers below come from this browser only.
@@ -696,7 +691,7 @@
                         <h3 id="integrity-heading" class="mt-1 text-xl font-bold text-slate-900">Library data safety</h3>
                         <p class="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
                             Compares the live <code class="rounded bg-slate-100 px-1 py-0.5 text-xs">apps/</code> files, curated
-                            <code class="rounded bg-slate-100 px-1 py-0.5 text-xs">library.json</code> metadata and the shared review queue so stale records cannot quietly distort statistics.
+                            <code class="rounded bg-slate-100 px-1 py-0.5 text-xs">library.json</code> metadata and the published file list so stale records cannot quietly distort statistics.
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
@@ -1250,9 +1245,8 @@
                             Resource Statistics
                         </h3>
                         <p class="text-slate-600 text-sm mt-1">
-                            Teacher activity, year/subject coverage, GitHub cloud storage and upload freshness — built
-                            from every file currently published in <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">apps/</code>
-                            and the shared teacher-upload record for it, so it is the same for every administrator.
+                            Contributor activity, year/subject coverage, GitHub cloud storage and upload freshness — built
+                            from the files currently published in <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">apps/</code>.
                         </p>
                     </div>
                 </div>
@@ -1272,11 +1266,11 @@
                     </div>
                     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                         <div class="flex items-center justify-between mb-3">
-                            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Teachers Publishing</span>
+                            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Contributors</span>
                             <i data-lucide="users-round" class="w-4 h-4 text-emerald-600" aria-hidden="true"></i>
                         </div>
                         <p class="text-3xl font-bold text-slate-900" x-text="teacherStatistics.length"></p>
-                        <p class="text-xs text-slate-500 mt-1">Distinct names attributed to a cloud file</p>
+                        <p class="text-xs text-slate-500 mt-1">Names attributed to published files</p>
                     </div>
                     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                         <div class="flex items-center justify-between mb-3">
@@ -1351,29 +1345,28 @@
                     </div>
                 </div>
 
-                <!-- Per-teacher table -->
+                <!-- Contributor activity table (no teacher login is used) -->
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8">
                     <div class="px-6 py-4 border-b border-slate-200">
-                        <h4 class="font-bold text-slate-900">Teacher Activity</h4>
+                        <h4 class="font-bold text-slate-900">Contributor Activity</h4>
                         <p class="text-xs text-slate-400 mt-0.5">
-                            Uploads, storage, year/subject coverage and last upload (the closest signal to "last login"
-                            this site has, since teachers share one login).
+                            Published files, storage, year/subject coverage and most recent file date.
                         </p>
                     </div>
                     <template x-if="teacherStatistics.length === 0">
-                        <p class="px-6 py-10 text-center text-slate-500 text-sm">No cloud files are attributed to a teacher yet.</p>
+                        <p class="px-6 py-10 text-center text-slate-500 text-sm">No contributor names are attributed to published files yet.</p>
                     </template>
                     <div x-show="teacherStatistics.length > 0" class="overflow-x-auto">
                         <table class="min-w-full text-sm">
-                            <caption class="sr-only">Upload activity per teacher</caption>
+                            <caption class="sr-only">Published resource activity by contributor</caption>
                             <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
                                 <tr>
-                                    <th scope="col" class="text-left font-semibold px-6 py-3">Teacher</th>
+                                    <th scope="col" class="text-left font-semibold px-6 py-3">Contributor</th>
                                     <th scope="col" class="text-left font-semibold px-6 py-3">Resources</th>
                                     <th scope="col" class="text-left font-semibold px-6 py-3 hidden sm:table-cell">Years</th>
                                     <th scope="col" class="text-left font-semibold px-6 py-3 hidden md:table-cell">Subjects</th>
                                     <th scope="col" class="text-left font-semibold px-6 py-3 hidden sm:table-cell">Storage</th>
-                                    <th scope="col" class="text-left font-semibold px-6 py-3">Last Upload (last login proxy)</th>
+                                    <th scope="col" class="text-left font-semibold px-6 py-3">Latest file</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
@@ -1513,7 +1506,7 @@
             </section>
         </div>
 
-        <!-- Upload View (teachers + admin) -->
+        <!-- Administrator direct-publish upload view -->
         <div x-show="isStaff && currentView === 'upload'" x-transition x-cloak>
             <div class="max-w-3xl mx-auto mb-6">
                 <button type="button" @click="currentView = 'library'" class="text-slate-500 hover:text-slate-900 flex items-center gap-2 transition-colors mb-3 focus-ring rounded-md">
@@ -1522,9 +1515,8 @@
                 </button>
                 <h2 class="text-3xl font-bold text-slate-900">Upload a Resource</h2>
                 <p class="text-slate-600 mt-2">
-                    Choose a file, describe it with structured details, check the automatic preview, then submit it for publication.
-                    <span x-show="!isAdmin" class="block mt-1 text-sm text-slate-500">An administrator reviews new submissions before they appear in the public library.</span>
-                    <span x-show="isAdmin" class="block mt-1 text-sm text-slate-500">As the administrator, your uploads are published to the library immediately.</span>
+                    Choose a file, add structured details, check the automatic preview, then publish it directly to the GitHub repository.
+                    <span class="block mt-1 text-sm text-slate-500">Published files appear in the student library after GitHub Pages deploys the update.</span>
                 </p>
                 <div class="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
                     <i data-lucide="shield-alert" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true"></i>
@@ -1665,7 +1657,7 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label for="resource-owner" class="block text-xs font-medium text-slate-500 mb-1">
-                                    Teacher / owner <span class="text-red-500" aria-hidden="true">*</span>
+                                    Resource owner <span class="text-red-500" aria-hidden="true">*</span>
                                 </label>
                                 <input id="resource-owner" type="text" x-model="draft.owner" placeholder="e.g. Mr A. Rahman"
                                        class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -1770,13 +1762,13 @@
                         </div>
                     </section>
 
+                    <p x-show="uploadMessage" x-text="uploadMessage" role="status"
+                       class="rounded-lg border px-4 py-3 text-sm"
+                       :class="uploadMessageTone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-slate-200 bg-slate-50 text-slate-700'"></p>
                     <button type="submit" :disabled="submitting"
                             class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-lg shadow-indigo-100 focus-ring">
-                        <span x-show="!submitting && !isAdmin" class="flex items-center gap-2">
-                            <i data-lucide="send" class="w-5 h-5" aria-hidden="true"></i> Submit for Publication
-                        </span>
-                        <span x-show="!submitting && isAdmin" class="flex items-center gap-2">
-                            <i data-lucide="check-circle-2" class="w-5 h-5" aria-hidden="true"></i> Publish Immediately
+                        <span x-show="!submitting" class="flex items-center gap-2">
+                            <i data-lucide="cloud-upload" class="w-5 h-5" aria-hidden="true"></i> Publish to GitHub &amp; Website
                         </span>
                         <span x-show="submitting" class="flex items-center gap-2">
                             <svg class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -1873,7 +1865,7 @@
             </div>
         </div>
 
-        <!-- Submissions View (teacher: my submissions / admin: review queue) -->
+        <!-- Legacy submission archive (new uploads publish directly) -->
         <div x-show="isStaff && currentView === 'submissions'" x-transition x-cloak>
             <div class="max-w-4xl mx-auto mb-8">
                 <button type="button" @click="currentView = 'library'" class="text-slate-500 hover:text-slate-900 flex items-center gap-2 transition-colors mb-3 focus-ring rounded-md">
@@ -1882,10 +1874,8 @@
                 </button>
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
-                        <h2 class="text-3xl font-bold text-slate-900" x-text="isAdmin ? 'Review Submissions' : 'My Submissions'"></h2>
-                        <p class="text-slate-600 mt-2 max-w-2xl" x-text="isAdmin
-                            ? 'Every teacher upload lands here, from whichever device it was made. Nothing is in the public library until you approve it — approving moves the file out of the staging folder into the library for every device.'
-                            : 'Resources you submit appear here. Each one is uploaded to the school cloud and waits for an administrator to approve it before it joins the public library. Teachers cannot delete uploaded files — ask the administrator if a resource needs to be removed.'"></p>
+                        <h2 class="text-3xl font-bold text-slate-900">Legacy Submission Archive</h2>
+                        <p class="text-slate-600 mt-2 max-w-2xl">This archive is retained for older review records. Teacher login is removed; new resources publish directly to GitHub from the Upload Resource page.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <button type="button" @click="refreshCloudQueue()" :disabled="cloudQueue.loading"
@@ -1901,15 +1891,10 @@
                     </div>
                 </div>
 
-                <!-- Where the queue came from -->
-                <div class="mt-4 rounded-lg border px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
-                     :class="cloudQueue.available
-                         ? 'bg-sky-50 border-sky-100 text-sky-800'
-                         : 'bg-amber-50 border-amber-100 text-amber-800'">
-                    <i :data-lucide="cloudQueue.available ? 'cloud-upload' : 'cloud-off'" class="w-4 h-4 flex-shrink-0" aria-hidden="true"></i>
-                    <span x-text="cloudQueue.available
-                        ? 'Shared queue: uploads from every device are shown here, staged in the repository and out of the public library until approved.'
-                        : 'This device only. Without an unlocked publishing token, uploads stay in this browser and cannot be reviewed elsewhere.'"></span>
+                <!-- Legacy queue status -->
+                <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <i data-lucide="archive" class="w-4 h-4 flex-shrink-0" aria-hidden="true"></i>
+                    <span>Older review records are read-only here. New admin uploads publish directly into <code>apps/</code>.</span>
                     <span class="text-xs opacity-75" x-show="cloudQueue.loadedAt" x-cloak
                           x-text="'Updated ' + new Date(cloudQueue.loadedAt).toLocaleTimeString()"></span>
                     <span class="text-xs font-medium text-red-700" x-show="cloudQueue.error" x-cloak x-text="cloudQueue.error"></span>
@@ -1925,7 +1910,7 @@
 
                 <div x-show="pendingSubmissions.length === 0" class="bg-white rounded-xl border border-slate-200 p-10 text-center">
                     <i data-lucide="check-circle-2" class="mx-auto h-10 w-10 text-emerald-500" aria-hidden="true"></i>
-                    <p class="text-slate-500 mt-3">Nothing is waiting. New teacher submissions appear here automatically, from any device.</p>
+                    <p class="text-slate-500 mt-3">Nothing is waiting. New files publish directly from Upload Resource.</p>
                 </div>
 
                 <ul role="list" class="space-y-5">
@@ -2102,371 +2087,112 @@
             </section>
         </div>
 
-        <!-- Settings View -->
+        <!-- Settings View (administrator only) -->
         <div x-show="isAdmin && currentView === 'settings'" x-transition x-cloak class="max-w-2xl mx-auto">
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-                <div class="flex items-center justify-between mb-8">
-                    <button type="button" @click="currentView = 'library'" class="text-slate-500 hover:text-slate-900 flex items-center gap-2 transition-colors focus-ring rounded-md">
-                        <i data-lucide="arrow-left" class="w-4 h-4" aria-hidden="true"></i> Back
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sm:p-8">
+                <div class="flex items-center justify-between mb-6 gap-4">
+                    <button type="button" @click="currentView = 'dashboard'" class="text-slate-500 hover:text-slate-900 flex items-center gap-2 transition-colors focus-ring rounded-md">
+                        <i data-lucide="arrow-left" class="w-4 h-4" aria-hidden="true"></i> Back to dashboard
                     </button>
                     <h2 class="text-2xl font-bold">Cloud Settings</h2>
                 </div>
 
-                <div class="bg-emerald-50 border border-emerald-100 p-4 rounded-lg mb-8 flex gap-3">
+                <div class="bg-emerald-50 border border-emerald-100 p-4 rounded-lg mb-7 flex gap-3">
                     <i data-lucide="shield-check" class="w-5 h-5 text-emerald-600 flex-shrink-0" aria-hidden="true"></i>
-                    <p class="text-sm text-emerald-800">Public mode reads apps without a Personal Access Token, and no credential is ever embedded in the site. The optional auto-publish token below lives in this tab's session only and is forgotten when the tab closes.</p>
+                    <p class="text-sm text-emerald-800">No GitHub access token is included in this website. Paste a replacement below when you are ready. It is verified with GitHub and kept only in this open tab's memory; signing out or closing the tab clears it.</p>
                 </div>
 
-                <div class="space-y-6">
-                    <div>
-                        <label for="github-repository" class="block text-sm font-medium text-slate-700 mb-1">Public Repository (Owner/Repo)</label>
-                        <input id="github-repository" type="text" x-model="githubConfig.repo" placeholder="Petgabs/BZFLS"
+                <div class="space-y-7">
+                    <section aria-labelledby="github-repository-heading">
+                        <h3 id="github-repository-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-3">
+                            <i data-lucide="github" class="w-4 h-4" aria-hidden="true"></i> GitHub repository
+                        </h3>
+                        <label for="github-repository" class="block text-xs font-medium text-slate-600 mb-1">Owner / repository</label>
+                        <input id="github-repository" type="text" x-model="githubConfig.repo" spellcheck="false" autocomplete="off" placeholder="Petgabs/HSC"
                                class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
-                        <p class="text-xs text-slate-400 mt-1">The repository must be public and contain an <code>apps</code> folder.</p>
-                    </div>
+                        <p class="text-xs text-slate-500 mt-2">Uploads are committed into <code>apps/</code> and their metadata is added to <code>library.json</code>. GitHub Pages then publishes the files for students.</p>
+                        <div class="flex flex-wrap gap-2 mt-3">
+                            <button type="button" @click="saveSettings()" :disabled="syncing" class="inline-flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-800 disabled:opacity-50 focus-ring">
+                                <i data-lucide="save" class="w-4 h-4" aria-hidden="true"></i> Save repository
+                            </button>
+                            <button type="button" @click="syncFromGithub()" :disabled="syncing" class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 focus-ring">
+                                <i data-lucide="refresh-cw" class="w-4 h-4" :class="syncing && 'animate-spin'" aria-hidden="true"></i>
+                                <span x-text="syncing ? 'Refreshing…' : 'Refresh library'"></span>
+                            </button>
+                        </div>
+                    </section>
 
-                    <button type="button" @click="saveSettings()" :disabled="syncing" class="w-full bg-slate-900 text-white py-2 rounded-lg font-bold hover:bg-slate-800 transition-colors disabled:opacity-50 focus-ring">
-                        Save and Sync
-                    </button>
-
-                    <div class="pt-4 border-t flex flex-col gap-2">
-                        <button type="button" @click="syncFromGithub()" :disabled="syncing" aria-label="Sync the library from GitHub" class="text-indigo-600 text-sm font-medium flex items-center gap-2 hover:bg-indigo-50 p-2 rounded-lg transition-colors disabled:opacity-50 focus-ring">
-                            <i data-lucide="refresh-cw" class="w-4 h-4" :class="syncing && 'animate-spin'" aria-hidden="true"></i>
-                            <span x-text="syncing ? 'Syncing...' : 'Sync Library from GitHub'"></span>
-                        </button>
-                        <a :href="githubUploadUrl()" target="_blank" rel="noopener noreferrer" class="text-slate-700 text-sm font-medium flex items-center gap-2 hover:bg-slate-50 p-2 rounded-lg transition-colors focus-ring">
-                            <i data-lucide="github" class="w-4 h-4" aria-hidden="true"></i> Upload an App Through GitHub
-                            <i data-lucide="external-link" class="w-3 h-3" aria-hidden="true"></i>
+                    <section class="pt-6 border-t" aria-labelledby="github-token-heading">
+                        <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+                            <div>
+                                <h3 id="github-token-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                    <i data-lucide="key-round" class="w-4 h-4" aria-hidden="true"></i> GitHub upload access
+                                </h3>
+                                <p class="text-xs text-slate-500 mt-1">Use a fine-grained Personal Access Token scoped to this repository with <strong>Contents: Read and write</strong>.</p>
+                            </div>
+                            <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1"
+                                  :class="githubAuth.connected ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-slate-200'">
+                                <i :data-lucide="githubAuth.connected ? 'plug-zap' : 'plug'" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                                <span x-text="githubAuth.connected ? 'Connected' : 'Not connected'"></span>
+                            </span>
+                        </div>
+                        <div x-show="!githubAuth.connected" class="space-y-3">
+                            <label for="github-token" class="block text-xs font-medium text-slate-600">New Personal Access Token</label>
+                            <div class="relative">
+                                <input id="github-token" :type="githubAuth.showToken ? 'text' : 'password'" x-model="githubAuth.token"
+                                       autocomplete="off" spellcheck="false" placeholder="Paste the new token here" aria-describedby="github-token-note"
+                                       class="w-full px-4 py-2.5 pr-12 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                                       :class="githubAuth.error ? 'border-red-300' : 'border-slate-200'">
+                                <button type="button" @click="toggleGithubToken()"
+                                        :aria-label="githubAuth.showToken ? 'Hide the token' : 'Show the token'"
+                                        class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700 rounded-md focus-ring">
+                                    <i :data-lucide="githubAuth.showToken ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            <p id="github-token-note" class="text-[11px] text-slate-500">The token is not written to GitHub, local storage, session storage or this repository.</p>
+                            <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600" role="alert"></p>
+                            <button type="button" @click="connectGithub()" :disabled="githubAuth.verifying"
+                                    class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 focus-ring">
+                                <i :data-lucide="githubAuth.verifying ? 'loader-2' : 'plug-zap'" class="w-4 h-4" :class="githubAuth.verifying && 'animate-spin'" aria-hidden="true"></i>
+                                <span x-text="githubAuth.verifying ? 'Checking token…' : 'Verify and use in this tab'"></span>
+                            </button>
+                        </div>
+                        <div x-show="githubAuth.connected" x-cloak class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                            <p class="text-sm font-semibold text-emerald-800">
+                                Connected<span x-show="githubAuth.login" x-text="' as ' + githubAuth.login"></span>.
+                            </p>
+                            <p class="text-xs text-emerald-700 mt-1">Direct publishing is enabled until you sign out or close this tab.</p>
+                            <button type="button" @click="disconnectGithub()" class="mt-3 inline-flex items-center gap-2 border border-emerald-300 bg-white text-emerald-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-100 focus-ring">
+                                <i data-lucide="log-out" class="w-4 h-4" aria-hidden="true"></i> Clear token from this tab
+                            </button>
+                        </div>
+                        <a :href="githubTokenUrl()" target="_blank" rel="noopener noreferrer" class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:underline">
+                            Create or revoke a GitHub token <i data-lucide="external-link" class="w-3.5 h-3.5" aria-hidden="true"></i>
                         </a>
-                    </div>
-
-                    <!-- GitHub auto-publish (administrator) -->
-                    <section class="pt-6 border-t" aria-labelledby="github-publish-heading">
-                        <h3 id="github-publish-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-1">
-                            <i data-lucide="cloud-upload" class="w-4 h-4" aria-hidden="true"></i> GitHub Auto-Publish
-                        </h3>
-                        <p class="text-xs text-slate-400 mb-4">
-                            Connect a GitHub token and approving a submission publishes it automatically: the file is committed to the <code>apps</code> folder and its metadata merged into <code>library.json</code>. Without a token, the manual copy/paste flow keeps working.
-                        </p>
-
-                        <!-- Status -->
-                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
-                            <div class="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <p class="text-xs text-slate-500">Status</p>
-                                    <p class="font-semibold text-slate-800 mt-0.5"
-                                       x-text="githubAuth.connected
-                                           ? (githubAuth.login ? 'Connected as ' + githubAuth.login : 'Connected')
-                                           : 'Not connected'"></p>
-                                    <p class="text-[11px] text-slate-500 mt-0.5" x-show="githubAuth.connected" x-cloak
-                                       x-text="usingCloudToken ? 'Using the shared token saved in the repository' : 'Using a token pasted into this tab'"></p>
-                                </div>
-                                <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1"
-                                      :class="githubAuth.connected ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-slate-200'">
-                                    <i :data-lucide="githubAuth.connected ? 'plug-zap' : 'plug'" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                    <span x-text="githubAuth.connected ? 'Auto-publish on' : 'Manual publishing'"></span>
-                                </span>
-                            </div>
-                            <p class="text-[11px] text-slate-400 mt-3 leading-relaxed">
-                                The token itself only ever lives in this tab's session storage and is only ever sent to <code>api.github.com</code>. Closing the tab or signing out forgets it. Saving it to GitHub Cloud (below) publishes <strong>encrypted</strong> bytes — never the token in the clear.
-                            </p>
-                        </div>
-
-                        <!-- Token form: pasting a new token, or replacing the saved one -->
-                        <div x-show="!githubAuth.connected || cloudToken.replacing" class="space-y-3">
-                            <div>
-                                <label for="github-token" class="block text-xs font-medium text-slate-500 mb-1">Fine-grained Personal Access Token</label>
-                                <div class="relative">
-                                    <input id="github-token" :type="githubAuth.showToken ? 'text' : 'password'" x-model="githubAuth.token"
-                                           autocomplete="off" spellcheck="false" placeholder="github_pat_…" aria-describedby="github-token-hint"
-                                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm pr-10"
-                                           :class="githubAuth.error ? 'border-red-300' : 'border-slate-200'">
-                                    <button type="button" @click="toggleGithubToken()"
-                                            :aria-label="githubAuth.showToken ? 'Hide the token' : 'Show the token'"
-                                            class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700 rounded-md focus-ring">
-                                        <i :data-lucide="githubAuth.showToken ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                <p id="github-token-hint" class="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                                    Create it on GitHub with access to <strong>only this repository</strong> and the single permission <strong>Contents: Read and write</strong>. Nothing else is needed.
-                                </p>
-                                <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600 mt-1.5" role="alert"></p>
-                            </div>
-                            <div class="flex flex-col sm:flex-row gap-2">
-                                <button type="button" @click="connectGithub()" :disabled="githubAuth.verifying"
-                                        class="flex-1 inline-flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-lg font-bold hover:bg-slate-800 transition-colors disabled:opacity-50 focus-ring">
-                                    <i data-lucide="plug-zap" class="w-4 h-4" :class="githubAuth.verifying && 'animate-pulse'" aria-hidden="true"></i>
-                                    <span x-text="githubAuth.verifying ? 'Verifying…' : 'Use in this tab only'"></span>
-                                </button>
-                                <a :href="githubTokenUrl()" target="_blank" rel="noopener noreferrer"
-                                   class="flex-1 inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-700 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors focus-ring">
-                                    <i data-lucide="github" class="w-4 h-4" aria-hidden="true"></i> Create a token on GitHub
-                                    <i data-lucide="external-link" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                </a>
-                            </div>
-
-                        </div>
-
-                        <!-- Connected -->
-                        <div x-show="githubAuth.connected && !cloudToken.replacing" x-cloak class="flex flex-col gap-2">
-                            <p class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 inline-flex items-center gap-2">
-                                <i data-lucide="check-circle-2" class="w-4 h-4 flex-shrink-0" aria-hidden="true"></i>
-                                Approving a submission now uploads the file and its metadata to GitHub automatically.
-                            </p>
-                            <button type="button" @click="disconnectGithub()"
-                                    class="inline-flex items-center gap-2 text-rose-600 text-sm font-medium hover:bg-rose-50 p-2 rounded-lg transition-colors focus-ring self-start">
-                                <i data-lucide="unplug" class="w-4 h-4" aria-hidden="true"></i>
-                                Disconnect and forget the token on this device
-                            </button>
-                        </div>
-
-                        <!-- Shared token saved in the repository -->
-                        <div class="mt-6 pt-5 border-t border-dashed border-slate-200" aria-labelledby="cloud-token-heading">
-                            <h4 id="cloud-token-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-1">
-                                <i data-lucide="cloud-cog" class="w-4 h-4" aria-hidden="true"></i> Token saved in GitHub Cloud
-                            </h4>
-                            <p class="text-xs text-slate-400 mb-4">
-                                One publishing token for the whole school, stored in the repository and unlocked by the teacher login.
-                            </p>
-
-                            <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-3">
-                                <div class="flex flex-wrap items-center justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <p class="text-xs text-slate-500">Repository copy</p>
-                                        <p class="font-semibold text-slate-800 mt-0.5" x-text="cloudTokenStatusLabel"></p>
-                                        <p class="text-[11px] text-slate-500 mt-1 font-mono break-all" x-show="cloudToken.fingerprint" x-cloak
-                                           x-text="'Fingerprint ' + cloudToken.fingerprint"></p>
-                                        <p class="text-[11px] text-slate-500" x-show="cloudToken.savedAt" x-cloak
-                                           x-text="'Saved ' + formatDate(cloudToken.savedAt) + (cloudToken.savedBy ? ' by ' + cloudToken.savedBy : '')"></p>
-                                    </div>
-                                    <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1"
-                                          :class="cloudToken.exists
-                                              ? (cloudToken.unlocked ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-amber-50 text-amber-700 ring-amber-200')
-                                              : 'bg-slate-100 text-slate-500 ring-slate-200'">
-                                        <i :data-lucide="cloudToken.exists ? (cloudToken.unlocked ? 'lock-open' : 'lock') : 'cloud-off'" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                        <span x-text="cloudToken.exists ? (cloudToken.unlocked ? 'Unlocked' : 'Locked') : 'Not saved'"></span>
-                                    </span>
-                                </div>
-                                <p x-show="cloudToken.notice" x-text="cloudToken.notice" x-cloak class="text-xs text-emerald-700 mt-3" role="status"></p>
-                                <p x-show="cloudToken.error" x-text="cloudToken.error" x-cloak class="text-sm text-red-600 mt-3" role="alert"></p>
-                            </div>
-
-                            <!-- Save the token into the repository -->
-                            <div x-show="!cloudToken.exists || cloudToken.replacing" class="bg-indigo-50/60 border border-indigo-100 rounded-lg p-4 space-y-3 mb-3">
-                                <p class="text-xs text-indigo-900 leading-relaxed">
-                                    <strong>Save the token to GitHub Cloud</strong> to share one publishing token with the whole school. It is encrypted with the
-                                    teacher password before it is committed to <code x-text="cloudTokenPath"></code>, so everyone who signs in with the
-                                    teacher login publishes through it — on any device, without ever seeing the token.
-                                </p>
-                                <p class="text-xs font-medium" aria-live="polite"
-                                   :class="githubAuth.token ? 'text-emerald-700' : 'text-amber-700'"
-                                   x-text="!githubAuth.token
-                                       ? 'Paste the fine-grained Personal Access Token above first.'
-                                       : (githubAuth.connected && !cloudToken.replacing
-                                           ? 'Ready: the token connected in this tab will be encrypted and saved.'
-                                           : 'Ready: the token entered above will be encrypted and saved.')"></p>
-                                <div>
-                                    <label for="cloud-token-password" class="block text-xs font-medium text-slate-600 mb-1">Current teacher password <span class="text-red-500" aria-hidden="true">*</span></label>
-                                    <div class="relative">
-                                        <input id="cloud-token-password" :type="cloudToken.showPassword ? 'text' : 'password'" x-model="cloudToken.password"
-                                               autocomplete="off" spellcheck="false" placeholder="The password teachers sign in with"
-                                               aria-describedby="cloud-token-password-hint"
-                                               class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm pr-10"
-                                               :class="cloudToken.error ? 'border-red-300' : 'border-slate-200'">
-                                        <button type="button" @click="toggleCloudTokenPassword()"
-                                                :aria-label="cloudToken.showPassword ? 'Hide the password' : 'Show the password'"
-                                                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700 rounded-md focus-ring">
-                                            <i :data-lucide="cloudToken.showPassword ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
-                                        </button>
-                                    </div>
-                                    <p id="cloud-token-password-hint" class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                                        This is the key that unlocks the token. It is checked against the current teacher login and never stored.
-                                    </p>
-                                </div>
-                                <div class="flex flex-col sm:flex-row gap-2">
-                                    <button type="button" @click="saveCloudToken()" :disabled="cloudToken.saving"
-                                            class="flex-1 inline-flex items-center justify-center gap-2 bg-indigo-600 text-white py-2.5 rounded-lg font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 focus-ring">
-                                        <i data-lucide="cloud-upload" class="w-4 h-4" :class="cloudToken.saving && 'animate-pulse'" aria-hidden="true"></i>
-                                        <span x-text="cloudToken.saving ? 'Saving to GitHub…' : (cloudToken.exists ? 'Save and replace in GitHub Cloud' : 'Save Token to GitHub Cloud')"></span>
-                                    </button>
-                                    <button type="button" x-show="cloudToken.replacing" x-cloak @click="cancelCloudTokenReplace()"
-                                            class="sm:w-32 inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-700 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors focus-ring">
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Unlock (administrators: the key is the teacher password) -->
-                            <div x-show="cloudToken.exists && !cloudToken.unlocked" x-cloak class="space-y-2 mb-3">
-                                <label for="cloud-token-unlock" class="block text-xs font-medium text-slate-500">Unlock with the teacher password</label>
-                                <div class="flex flex-col sm:flex-row gap-2">
-                                    <div class="relative flex-1">
-                                        <input id="cloud-token-unlock" :type="cloudToken.showUnlockPassword ? 'text' : 'password'" x-model="cloudToken.unlockPassword"
-                                               autocomplete="off" spellcheck="false" placeholder="Teacher password"
-                                               @keydown.enter.prevent="unlockCloudTokenFromForm()"
-                                               class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm pr-10">
-                                        <button type="button" @click="toggleCloudTokenUnlockPassword()"
-                                                :aria-label="cloudToken.showUnlockPassword ? 'Hide the password' : 'Show the password'"
-                                                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700 rounded-md focus-ring">
-                                            <i :data-lucide="cloudToken.showUnlockPassword ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
-                                        </button>
-                                    </div>
-                                    <button type="button" @click="unlockCloudTokenFromForm()" :disabled="cloudToken.unlocking"
-                                            class="sm:w-40 inline-flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-slate-800 transition-colors disabled:opacity-50 focus-ring">
-                                        <i data-lucide="key-round" class="w-4 h-4" :class="cloudToken.unlocking && 'animate-pulse'" aria-hidden="true"></i>
-                                        <span x-text="cloudToken.unlocking ? 'Unlocking…' : 'Unlock'"></span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Change / delete -->
-                            <div x-show="cloudToken.exists" x-cloak class="flex flex-col sm:flex-row flex-wrap gap-2">
-                                <button type="button" x-show="!cloudToken.replacing" @click="startCloudTokenReplace()"
-                                        class="inline-flex items-center justify-center gap-2 border border-slate-300 text-slate-700 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors focus-ring">
-                                    <i data-lucide="refresh-ccw" class="w-4 h-4" aria-hidden="true"></i> Change to a new token
-                                </button>
-                                <button type="button" @click="deleteCloudToken()" :disabled="cloudToken.deleting"
-                                        class="inline-flex items-center justify-center gap-2 border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-rose-100 transition-colors disabled:opacity-50 focus-ring">
-                                    <i data-lucide="trash-2" class="w-4 h-4" :class="cloudToken.deleting && 'animate-pulse'" aria-hidden="true"></i>
-                                    <span x-text="cloudToken.deleting ? 'Deleting…' : 'Delete from GitHub Cloud'"></span>
-                                </button>
-                                <a :href="cloudTokenFileUrl()" target="_blank" rel="noopener noreferrer"
-                                   class="inline-flex items-center justify-center gap-2 text-slate-600 px-3 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors focus-ring">
-                                    <i data-lucide="file-lock-2" class="w-4 h-4" aria-hidden="true"></i> View the encrypted file
-                                    <i data-lucide="external-link" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                </a>
-                            </div>
-
-                            <p class="text-[11px] text-slate-400 mt-3 leading-relaxed">
-                                Deleting removes the file from the repository so no device can unlock it again — it does <strong>not</strong> revoke the token itself.
-                                <a :href="githubTokenSettingsUrl()" target="_blank" rel="noopener noreferrer" class="text-indigo-600 font-medium hover:underline">Revoke it on GitHub</a>
-                                as well. Changing the teacher password automatically re-locks the saved token with the new one.
-                            </p>
-                        </div>
                     </section>
 
-                    <!-- Teacher access (administrator) -->
-                    <section class="pt-6 border-t" aria-labelledby="teacher-access-heading">
-                        <h3 id="teacher-access-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-1">
-                            <i data-lucide="key-round" class="w-4 h-4" aria-hidden="true"></i> Teacher Access
+                    <section class="pt-6 border-t" aria-labelledby="abacus-heading">
+                        <h3 id="abacus-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-2">
+                            <i data-lucide="chart-no-axes-combined" class="w-4 h-4" aria-hidden="true"></i> Abacus counters
                         </h3>
-                        <p class="text-xs text-slate-400 mb-4">
-                            The shared staff account teachers sign in with to upload resources. Only the administrator can change it — teachers never see this screen.
-                        </p>
+                        <p class="text-xs text-slate-500">The site visitor total and every file's individual download total use Abacus. When Abacus is unavailable, this browser shows a local fallback until the next successful refresh.</p>
+                        <p class="mt-2 text-xs text-slate-500">Counter service: <code>abacus.jasoncameron.dev</code> · Namespace: <code>petgabs-hsc-schoolcloud</code></p>
+                    </section>
 
-                        <!-- Current credentials -->
-                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
-                            <div class="flex flex-wrap items-center justify-between gap-3">
-                                <div>
-                                    <p class="text-xs text-slate-500">Current username</p>
-                                    <p class="font-mono font-semibold text-slate-800 mt-0.5" x-text="effectiveTeacherUsername"></p>
-                                </div>
-                                <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1"
-                                      :class="teacherOverrideActive ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'">
-                                    <i :data-lucide="teacherOverrideActive ? 'pencil' : 'shield-check'" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                    <span x-text="teacherOverrideActive ? 'Changed on this device' : 'Repository default'"></span>
-                                </span>
-                            </div>
-                            <p x-show="teacherOverrideActive" class="text-xs text-amber-700 mt-3 leading-relaxed">
-                                This change applies to <strong>this browser only</strong> — the old login no longer works here, but other devices still use the published credentials. Use the publish buttons below to roll it out to every teacher.
-                            </p>
-                            <p class="text-[11px] text-slate-400 mt-3 leading-relaxed">
-                                Passwords are stored only as salted SHA-256 digests — never in plaintext, not even here.
-                            </p>
-                        </div>
-
-                        <!-- Change button -->
-                        <button type="button" x-show="!teacherCredsOpen" @click="openTeacherCreds()"
-                                class="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-lg font-bold hover:bg-slate-800 transition-colors focus-ring">
-                            <i data-lucide="key-round" class="w-4 h-4" aria-hidden="true"></i>
-                            Change Teacher Login
-                        </button>
-
-                        <!-- Change form -->
-                        <form x-show="teacherCredsOpen" x-cloak @submit.prevent="saveTeacherCredentials()" class="space-y-4 bg-white border border-slate-200 rounded-lg p-4" novalidate>
-                            <div>
-                                <label for="teacher-new-user" class="block text-xs font-medium text-slate-500 mb-1">New username</label>
-                                <input id="teacher-new-user" type="text" x-model="teacherCreds.username" autocomplete="off" spellcheck="false"
-                                       class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
-                                       :class="teacherCredsErrors.username ? 'border-red-300' : 'border-slate-200'">
-                                <p x-show="teacherCredsErrors.username" x-text="teacherCredsErrors.username" class="text-sm text-red-600 mt-1" role="alert"></p>
-                            </div>
-                            <div>
-                                <label for="teacher-new-pass" class="block text-xs font-medium text-slate-500 mb-1">New password</label>
-                                <div class="relative">
-                                    <input id="teacher-new-pass" :type="showTeacherPassword ? 'text' : 'password'" x-model="teacherCreds.password"
-                                           autocomplete="new-password" aria-describedby="teacher-pass-hint"
-                                           class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none pr-10"
-                                           :class="teacherCredsErrors.password ? 'border-red-300' : 'border-slate-200'">
-                                    <button type="button" @click="toggleTeacherPassword()"
-                                            :aria-label="showTeacherPassword ? 'Hide the new password' : 'Show the new password'"
-                                            class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700 rounded-md focus-ring">
-                                        <i :data-lucide="showTeacherPassword ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
-                                    </button>
-                                </div>
-                                <p id="teacher-pass-hint" class="text-xs text-slate-400 mt-1">At least 14 characters. Teachers share this account, so use a strong passphrase.</p>
-                                <p x-show="teacherCredsErrors.password" x-text="teacherCredsErrors.password" class="text-sm text-red-600 mt-1" role="alert"></p>
-                            </div>
-                            <div>
-                                <label for="teacher-new-pass-confirm" class="block text-xs font-medium text-slate-500 mb-1">Confirm new password</label>
-                                <input id="teacher-new-pass-confirm" :type="showTeacherPassword ? 'text' : 'password'" x-model="teacherCreds.confirm" autocomplete="new-password"
-                                       class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                       :class="teacherCredsErrors.confirm ? 'border-red-300' : 'border-slate-200'">
-                                <p x-show="teacherCredsErrors.confirm" x-text="teacherCredsErrors.confirm" class="text-sm text-red-600 mt-1" role="alert"></p>
-                            </div>
-                            <div class="flex gap-2 pt-1">
-                                <button type="button" @click="cancelTeacherCreds()"
-                                        class="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-slate-50 focus-ring">Cancel</button>
-                                <button type="submit" :disabled="savingTeacherCreds"
-                                        class="flex-1 inline-flex items-center justify-center gap-2 bg-indigo-600 text-white py-2 rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 focus-ring">
-                                    <i data-lucide="check" class="w-4 h-4" aria-hidden="true"></i>
-                                    <span x-text="savingTeacherCreds ? 'Saving…' : 'Update on this device'"></span>
-                                </button>
-                            </div>
-                            <p class="text-[11px] text-slate-400 leading-relaxed border-t border-slate-100 pt-3">
-                                Applies immediately in this browser. To roll the new login out to every teacher, publish it with the buttons below after saving.
-                            </p>
-                        </form>
-
-                        <!-- Publish site-wide -->
-                        <div class="flex flex-col gap-2 mt-4">
-                            <button type="button" @click="copyTeacherConfig()"
-                                    class="inline-flex items-center gap-2 bg-slate-900 text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-slate-800 transition-colors focus-ring">
-                                <i data-lucide="clipboard-copy" class="w-4 h-4" aria-hidden="true"></i>
-                                Copy config lines for GitHub
+                    <section class="pt-6 border-t" aria-labelledby="local-cleanup-heading">
+                        <h3 id="local-cleanup-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-2">
+                            <i data-lucide="hard-drive" class="w-4 h-4" aria-hidden="true"></i> Local cleanup
+                        </h3>
+                        <p class="text-xs text-slate-500 mb-3">These controls affect only this browser. They never delete published files from GitHub.</p>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" @click="clearGithubCache()" class="inline-flex items-center gap-2 border border-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 focus-ring">
+                                <i data-lucide="cloud-off" class="w-4 h-4" aria-hidden="true"></i> Clear cached library
                             </button>
-                            <a :href="githubEditConfigUrl()" target="_blank" rel="noopener noreferrer"
-                               class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-slate-50 transition-colors focus-ring">
-                                <i data-lucide="github" class="w-4 h-4" aria-hidden="true"></i> Edit assets/js/config.js on GitHub
-                                <i data-lucide="external-link" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                            </a>
-                            <button type="button" x-show="teacherOverrideActive" @click="resetTeacherCredentials()"
-                                    class="inline-flex items-center gap-2 text-amber-700 text-sm font-medium hover:bg-amber-50 p-2 rounded-lg transition-colors focus-ring">
-                                <i data-lucide="rotate-ccw" class="w-4 h-4" aria-hidden="true"></i>
-                                Restore repository default on this device
+                            <button type="button" @click="clearData()" class="inline-flex items-center gap-2 border border-rose-200 text-rose-700 px-3 py-2 rounded-lg text-sm hover:bg-rose-50 focus-ring">
+                                <i data-lucide="trash-2" class="w-4 h-4" aria-hidden="true"></i> Clear local settings
                             </button>
                         </div>
                     </section>
-
-                    <div class="pt-4 border-t">
-                        <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-1">
-                            <i data-lucide="hard-drive" class="w-4 h-4" aria-hidden="true"></i> Local Cleanup
-                        </h3>
-                        <p class="text-xs text-slate-400 mb-3">These actions only affect this browser. Nothing is removed from the public repository.</p>
-                        <div class="flex flex-col gap-2">
-                            <button type="button" @click="clearLocalDrafts()" class="text-amber-700 text-sm font-medium flex items-center gap-2 hover:bg-amber-50 p-2 rounded-lg transition-colors focus-ring">
-                                <i data-lucide="file-x" class="w-4 h-4" aria-hidden="true"></i>
-                                <span x-text="'Remove Browser-Only Apps (' + localAppCount + ')'"></span>
-                            </button>
-                            <button type="button" @click="clearGithubCache()" class="text-amber-700 text-sm font-medium flex items-center gap-2 hover:bg-amber-50 p-2 rounded-lg transition-colors focus-ring">
-                                <i data-lucide="cloud-off" class="w-4 h-4" aria-hidden="true"></i>
-                                <span x-text="'Clear Cached Cloud Entries (' + cloudAppCount + ')'"></span>
-                            </button>
-                            <button type="button" @click="clearData()" class="text-red-600 text-sm font-medium flex items-center gap-2 hover:bg-red-50 p-2 rounded-lg transition-colors focus-ring">
-                                <i data-lucide="trash" class="w-4 h-4" aria-hidden="true"></i> Clear All Local Data
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -2549,22 +2275,22 @@
             </div>
         </div>
 
-        <!-- Sign In Modal (teacher + administrator) -->
+        <!-- Administrator sign-in (the shared teacher login has been removed) -->
+        <div x-show="toast.visible" x-cloak role="status" aria-live="polite"
+             class="fixed bottom-4 left-1/2 z-[70] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-xl border px-4 py-3 text-sm font-medium shadow-xl"
+             :class="toast.tone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : (toast.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-700')"
+             x-text="toast.message"></div>
+
         <div x-show="showLogin" x-cloak
              class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
              role="dialog" aria-modal="true" aria-labelledby="login-title"
              @keydown.escape.window="showLogin = false">
             <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-sm p-6" @click.outside="showLogin = false">
                 <div class="flex items-center gap-2 mb-1">
-                    <div class="p-2 rounded-lg text-white" :class="loginMode === 'admin' ? 'bg-indigo-600' : 'bg-emerald-600'">
-                        <i :data-lucide="loginMode === 'admin' ? 'shield' : 'graduation-cap'" class="w-4 h-4" aria-hidden="true"></i>
-                    </div>
-                    <h2 id="login-title" class="text-lg font-bold" x-text="loginMode === 'admin' ? 'Administrator Sign In' : 'Teacher Sign In'"></h2>
+                    <div class="p-2 rounded-lg bg-indigo-600 text-white"><i data-lucide="shield" class="w-4 h-4" aria-hidden="true"></i></div>
+                    <h2 id="login-title" class="text-lg font-bold">Administrator Sign In</h2>
                 </div>
-                <p class="text-xs text-slate-400 mb-5"
-                   x-text="loginMode === 'admin'
-                        ? 'Approving submissions, deleting files and settings are restricted to the administrator.'
-                        : 'Teachers sign in to upload resources. Ask the administrator for the shared staff username and password.'"></p>
+                <p class="text-xs text-slate-500 mb-5">Admin publishing, repository management and settings are restricted to the administrator.</p>
                 <form @submit.prevent="login()" class="space-y-4">
                     <div>
                         <label for="login-user" class="block text-sm font-medium text-slate-700 mb-1">Username</label>
@@ -2578,25 +2304,15 @@
                     </div>
                     <p x-show="loginError" x-text="loginError" class="text-sm text-red-600" role="alert"></p>
                     <div class="flex gap-2 pt-1">
-                        <button type="button" @click="showLogin = false"
-                                class="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-slate-50 focus-ring">Cancel</button>
-                        <button type="submit" :disabled="checkingLogin" aria-label="Sign in"
-                                class="flex-1 text-white py-2 rounded-lg font-bold disabled:opacity-50 focus-ring"
-                                :class="loginMode === 'admin' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-emerald-600 hover:bg-emerald-700'">
-                            <span x-text="checkingLogin ? 'Checking...' : 'Sign In'"></span>
+                        <button type="button" @click="showLogin = false" class="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-slate-50 focus-ring">Cancel</button>
+                        <button type="submit" :disabled="checkingLogin" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold disabled:opacity-50 focus-ring">
+                            <span x-text="checkingLogin ? 'Checking…' : 'Sign In'"></span>
                         </button>
                     </div>
-                    <button type="button" x-show="loginMode === 'teacher'" @click="openLogin('admin')"
-                            class="w-full text-xs text-slate-400 hover:text-slate-600 transition-colors focus-ring rounded px-1 py-0.5">
-                        Administrator? Sign in with the admin account
-                    </button>
-                    <button type="button" x-show="loginMode === 'admin'" @click="openLogin('teacher')"
-                            class="w-full text-xs text-slate-400 hover:text-slate-600 transition-colors focus-ring rounded px-1 py-0.5">
-                        A teacher? Use the teacher login
-                    </button>
                 </form>
             </div>
         </div>
+
     </main>
 
     <script type="module" src="./assets/js/register-sw.js"></script>

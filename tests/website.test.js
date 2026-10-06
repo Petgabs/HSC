@@ -1,0 +1,35 @@
+import { readFile, access } from 'node:fs/promises';
+import { describe, expect, it } from 'vitest';
+
+const read = path => readFile(new URL(path, import.meta.url), 'utf8');
+
+describe('School Cloud release configuration', () => {
+  it('removes teacher sign-in and encrypted shared-token controls', async () => {
+    const html = await read('../index.html');
+    expect(html).not.toContain('Teacher Login');
+    expect(html).not.toContain("openLogin('teacher')");
+    expect(html).not.toContain('Teacher Access');
+    expect(html).not.toContain('Save Token to GitHub Cloud');
+    expect(html).toContain('Administrator Sign In');
+    expect(html).toContain('Publish to GitHub &amp; Website');
+  });
+
+  it('ships with no GitHub credential and allows only the Abacus counter origin', async () => {
+    const [config, html, headers] = await Promise.all([
+      read('../assets/js/config.js'), read('../index.html'), read('../_headers')
+    ]);
+    expect(config).toContain("baseUrl: 'https://abacus.jasoncameron.dev'");
+    expect(config).toContain("username: ''");
+    expect(config).toContain("passwordHash: ''");
+    expect(config).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
+    expect(html).toContain('https://abacus.jasoncameron.dev');
+    expect(html).not.toContain('supabase.co');
+    expect(headers).not.toContain('supabase.co');
+  });
+
+  it('has every first-party asset referenced by the page', async () => {
+    const html = await read('../index.html');
+    const paths = [...html.matchAll(/(?:src|href)="\.\/([^"#?]+)"/g)].map(match => match[1]);
+    for (const path of paths) await expect(access(new URL(`../${path}`, import.meta.url))).resolves.toBeUndefined();
+  });
+});

@@ -11,10 +11,10 @@
  *   Library manifests/data    -> network-first, canonical cache key
  *   Published downloads       -> bounded cache-first with request coalescing
  *   Counters, GitHub API and  -> network only
- *   Review queue/token files  -> network only
+ *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.7.0';
+const VERSION = 'v1.8.0';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -39,17 +39,9 @@ const SHELL_ASSETS = [
   './assets/js/lib/search.js',
   './assets/js/lib/counters.js',
   './assets/js/lib/format.js',
-  './assets/js/lib/freshness.js',
   './assets/js/lib/preview.js',
-  './assets/js/lib/submissions.js',
-  './assets/js/lib/fileStore.js',
-  './assets/js/lib/credentials.js',
   './assets/js/lib/githubPublish.js',
-  './assets/js/lib/tokenVault.js',
-  './assets/js/lib/reviewQueue.js',
-  './assets/js/lib/resourceStats.js',
-  './assets/js/lib/integrity.js',
-  './assets/vendor/alpine.min.js',
+  './assets/vendor/alpine.esm.js',
   './assets/vendor/lucide.min.js'
 ];
 
@@ -90,8 +82,9 @@ function isDownloadableFile(url) {
 }
 
 function isNeverCache(url) {
-  return url.pathname.endsWith('/assets/data/cloud-token.json') ||
-    url.pathname.endsWith('/submissions/queue.json') ||
+  // Retain network-only behavior for legacy review data if an older repository
+  // still contains it. Access tokens are never read from or written to files.
+  return url.pathname.endsWith('/submissions/queue.json') ||
     url.pathname.includes('/submissions/pending/');
 }
 
@@ -185,8 +178,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
 
   // Never cache credentials, counters, review data or GitHub API traffic.
-  if (url.hostname.endsWith('supabase.co') ||
-      url.hostname.includes('abacus') ||
+  if (url.hostname.includes('abacus') ||
       url.hostname === 'api.github.com' ||
       isNeverCache(url)) return;
 
