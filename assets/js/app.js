@@ -124,9 +124,9 @@ async function verifyConfiguredAdmin(username, password) {
 }
 
 /**
- * Check the master password that opens the Administrator account section of
- * Cloud Settings. Same scheme as the sign-in gate: a salt plus the SHA-256
- * digest of `<salt>:<password>`, never the plain password.
+ * Check the master password that opens Cloud Settings. Same scheme as the
+ * sign-in gate: a salt plus the SHA-256 digest of `<salt>:<password>`, never
+ * the plain password.
  */
 async function verifyConfiguredMaster(password) {
   const configured = readMasterGate();
@@ -323,9 +323,11 @@ function schoolCloud() {
     adminAccount: {
       unlocked: false,
       checking: false,
+      unlockAttempt: 0,
       saving: false,
       showMasterPassword: false,
       masterPassword: '',
+      focusAccountOnUnlock: false,
       error: '',
       notice: '',
       noticeUrl: '',
@@ -579,6 +581,9 @@ function schoolCloud() {
     async init() {
       if (this._initialized) return;
       this._initialized = true;
+      this.$watch('currentView', (view, previous) => {
+        if (previous === 'settings' && view !== 'settings') this.lockAdminAccount();
+      });
       this.clearLegacyTokens();
       this.loadSavedRepoSettings();
       // Apply a credential this device rotated before the deployment landed.
@@ -964,7 +969,7 @@ function schoolCloud() {
       if (!this.isAdmin) return this.openLogin('admin');
       if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
         this.notify('Connect a GitHub token in Settings before saving counts. It needs Contents: Read and write access.', 'error');
-        this.currentView = 'settings';
+        this.openCloudSettings();
         return;
       }
       if (this.statsSyncing) return;
@@ -1062,22 +1067,27 @@ function schoolCloud() {
       if (!this.isAdmin) return;
       if (destination === 'upload') return this.openUpload();
       if (destination === 'account') return this.openAdminAccountSettings();
-      if (destination === 'settings') return this.currentView = 'settings';
+      if (destination === 'settings') return this.openCloudSettings();
       if (destination === 'library') return this.currentView = 'library';
       this.currentView = destination || 'dashboard';
     },
     /**
-     * Open Cloud Settings and scroll to the Administrator account section.
-     * The section stays locked until the master password is entered.
+     * Open Cloud Settings behind the master-password gate. Every entry point
+     * starts locked, including clicking the settings icon a second time.
      */
-    openAdminAccountSettings() {
+    openCloudSettings({ focusAccount = false } = {}) {
+      if (!this.isAdmin) return this.openLogin('admin');
+      this.lockAdminAccount();
+      this.adminAccount.focusAccountOnUnlock = Boolean(focusAccount);
       this.currentView = 'settings';
       this.refreshIcons();
-      this.$nextTick(() => {
-        document.getElementById('admin-account-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        document.getElementById('master-password')?.focus({ preventScroll: true });
-      });
+      this.$nextTick(() => document.getElementById('master-password')?.focus({ preventScroll: true }));
     },
+    /** Open Cloud Settings and scroll to the Administrator account after unlock. */
+    openAdminAccountSettings() {
+      this.openCloudSettings({ focusAccount: true });
+    },
+
     openLogin() {
       this.loginMode = 'admin';
       this.loginError = '';
@@ -1218,7 +1228,7 @@ function schoolCloud() {
       }
       if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
         this.notify('Connect a GitHub token in Settings before deleting a repository file.', 'error');
-        this.currentView = 'settings';
+        this.openCloudSettings();
         return;
       }
       if (!window.confirm(`Delete “${item.name}” from GitHub (file, library metadata and saved download counts) and the public library? This cannot be undone.`)) return;
@@ -1597,12 +1607,9 @@ function schoolCloud() {
     },
 
     /**
-     * Administrator account section (Cloud Settings).
-     *
-     * The section is locked behind a master password. Rotating a credential
-     * writes a fresh salt and SHA-256 digest into assets/js/config.js on
-     * GitHub, so the change is real for every visitor once GitHub Pages
-     * deploys it; this device also remembers it so it works immediately.
+     * Unlock the entire Cloud Settings page with the configured master
+     * password. Administrator credentials remain unavailable until this
+     * check succeeds. Rotations are committed as salted digests in config.js.
      */
     async unlockAdminAccount() {
       if (this.adminAccount.checking) return;
@@ -1613,12 +1620,14 @@ function schoolCloud() {
       }
       const password = String(this.adminAccount.masterPassword || '');
       if (!password) {
-        this.adminAccount.error = 'Enter the master password to open this section.';
+        this.adminAccount.error = 'Enter the master password to open Cloud Settings.';
         return;
       }
       this.adminAccount.checking = true;
+      const attempt = ++this.adminAccount.unlockAttempt;
       try {
         const result = await verifyConfiguredMaster(password);
+        if (attempt !== this.adminAccount.unlockAttempt) return;
         if (result.configurationMissing) {
           this.adminAccount.error = 'No master password is configured on this deployment. Set the master salt and digest in assets/js/config.js.';
           return;
@@ -1629,32 +1638,47 @@ function schoolCloud() {
           this.$nextTick(() => document.getElementById('master-password')?.focus());
           return;
         }
+        const focusAccount = this.adminAccount.focusAccountOnUnlock;
         this.adminAccount.masterPassword = '';
+        this.adminAccount.showMasterPassword = false;
         this.adminAccount.unlocked = true;
+        this.adminAccount.focusAccountOnUnlock = false;
         this.adminAccount.error = '';
         this.adminAccount.notice = '';
         this.adminAccount.noticeUrl = '';
         this.adminAccount.form = { ...emptyAdminAccountForm(), username: readAdminGate().username };
         this.refreshIcons();
-        this.$nextTick(() => document.getElementById('admin-username')?.focus({ preventScroll: true }));
+        this.$nextTick(() => {
+          if (focusAccount) {
+            document.getElementById('admin-account-section')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+          }
+          const target = focusAccount ? 'admin-username' : 'github-repository';
+          document.getElementById(target)?.focus?.({ preventScroll: true });
+        });
       } catch (error) {
-        this.adminAccount.error = error?.message || 'The master password could not be checked.';
+        if (attempt === this.adminAccount.unlockAttempt) {
+          this.adminAccount.error = error?.message || 'The master password could not be checked.';
+        }
       } finally {
-        this.adminAccount.checking = false;
-        this.refreshIcons();
+        if (attempt === this.adminAccount.unlockAttempt) {
+          this.adminAccount.checking = false;
+          this.refreshIcons();
+        }
       }
     },
     lockAdminAccount({ announce = false } = {}) {
+      this.adminAccount.unlockAttempt += 1;
       this.adminAccount.unlocked = false;
       this.adminAccount.checking = false;
       this.adminAccount.masterPassword = '';
       this.adminAccount.showMasterPassword = false;
+      this.adminAccount.focusAccountOnUnlock = false;
       this.adminAccount.error = '';
       this.adminAccount.notice = '';
       this.adminAccount.noticeUrl = '';
       this.adminAccount.form = emptyAdminAccountForm();
       this.refreshIcons();
-      if (announce) this.notify('The Administrator account section was locked again.', 'success');
+      if (announce) this.notify('Cloud Settings were locked again.', 'success');
     },
     toggleMasterPasswordVisibility() {
       this.adminAccount.showMasterPassword = !this.adminAccount.showMasterPassword;

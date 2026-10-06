@@ -145,6 +145,56 @@ async function signIn(state, username, password) {
 }
 
 describe('administrator account section', () => {
+  it('requires the master password for Cloud Settings and locks again on exit or reopen', async () => {
+    const visit = await openPage({ credentials: gateFor(ORIGINAL) });
+    try {
+      const state = visit.state;
+      expect(await signIn(state, ORIGINAL.username, ORIGINAL.password)).toBe(true);
+      expect(state.adminAccount.unlocked).toBe(false);
+
+      const settingsButton = visit.window.document.querySelector('button[aria-label="Settings"]');
+      expect(settingsButton).toBeTruthy();
+      settingsButton.click();
+      await settle();
+      expect(state.currentView).toBe('settings');
+      expect(state.adminAccount.unlocked).toBe(false);
+      const gate = visit.window.document.getElementById('cloud-settings-password-gate');
+      const settingsContent = visit.window.document.getElementById('github-repository')?.closest('[x-show="adminAccount.unlocked"]');
+      expect(gate).toBeTruthy();
+      expect(settingsContent?.style.display).toBe('none');
+
+      state.adminAccount.masterPassword = 'wrong-master-password';
+      await state.unlockAdminAccount();
+      expect(state.adminAccount.unlocked).toBe(false);
+      expect(state.adminAccount.error).toContain('incorrect');
+
+      state.adminAccount.masterPassword = ORIGINAL.master;
+      await state.unlockAdminAccount();
+      expect(state.adminAccount.unlocked).toBe(true);
+      await settle();
+      expect(settingsContent?.style.display).not.toBe('none');
+
+      // The header settings icon starts a fresh locked settings visit even if
+      // settings were already open.
+      settingsButton.click();
+      await settle();
+      expect(state.adminAccount.unlocked).toBe(false);
+      expect(settingsContent?.style.display).toBe('none');
+
+      // Leaving the page locks it too; dashboard and quick-action navigation
+      // must both go through the same password gate when settings are reopened.
+      state.openDashboard();
+      await settle();
+      expect(state.adminAccount.unlocked).toBe(false);
+      state.openAdminWorkspace('settings');
+      await settle();
+      expect(state.currentView).toBe('settings');
+      expect(state.adminAccount.unlocked).toBe(false);
+    } finally {
+      await close(visit);
+    }
+  }, 30_000);
+
   it('stays locked until the master password is accepted, then commits a rotation', async () => {
     const original = gateFor(ORIGINAL);
     let storedOverride = null;
