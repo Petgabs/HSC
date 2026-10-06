@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.10.0</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.11.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -69,13 +69,6 @@
                         class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors shadow-sm focus-ring">
                     <i data-lucide="upload" class="w-4 h-4" aria-hidden="true"></i>
                     Upload Resource
-                </button>
-                <button type="button" @click="openSubmissions()" x-show="isStaff"
-                        class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-3 py-2 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors focus-ring">
-                    <i data-lucide="inbox" class="w-4 h-4" aria-hidden="true"></i>
-                    <span x-text="isAdmin ? 'Review Submissions' : 'My Submissions'"></span>
-                    <span x-show="submissionCounts.pending" class="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                          x-text="submissionCounts.pending"></span>
                 </button>
                 <button type="button" @click="currentView = 'settings'" x-show="isAdmin" aria-label="Settings"
                         class="p-2 text-slate-400 hover:text-slate-600 transition-colors focus-ring rounded-md">
@@ -729,7 +722,7 @@
                     </div>
                 </div>
 
-                <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <div class="rounded-xl bg-slate-50 p-3">
                         <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Published files</p>
                         <p class="mt-1 text-2xl font-bold text-slate-900" x-text="integrityReport.counts.publishedFiles"></p>
@@ -737,10 +730,6 @@
                     <div class="rounded-xl bg-slate-50 p-3">
                         <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Metadata entries</p>
                         <p class="mt-1 text-2xl font-bold text-slate-900" x-text="integrityReport.counts.metadataEntries"></p>
-                    </div>
-                    <div class="rounded-xl bg-slate-50 p-3">
-                        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Queue entries</p>
-                        <p class="mt-1 text-2xl font-bold text-slate-900" x-text="integrityReport.counts.queueEntries"></p>
                     </div>
                     <div class="rounded-xl bg-rose-50 p-3">
                         <p class="text-[11px] font-semibold uppercase tracking-wide text-rose-400">Errors</p>
@@ -942,9 +931,9 @@
                                 <i data-lucide="upload-cloud" class="h-4 w-4 text-indigo-600" aria-hidden="true"></i>
                                 <span class="text-sm font-semibold text-slate-700 group-hover:text-indigo-800">Publish resource</span>
                             </button>
-                            <button type="button" @click="openAdminWorkspace('submissions')" class="group flex min-h-20 flex-col items-start justify-between rounded-xl border border-slate-200 p-3 text-left transition hover:border-amber-200 hover:bg-amber-50 focus-ring">
-                                <i data-lucide="clipboard-check" class="h-4 w-4 text-amber-600" aria-hidden="true"></i>
-                                <span class="text-sm font-semibold text-slate-700 group-hover:text-amber-800">Review queue</span>
+                            <button type="button" @click="openAdminWorkspace('account')" class="group flex min-h-20 flex-col items-start justify-between rounded-xl border border-slate-200 p-3 text-left transition hover:border-amber-200 hover:bg-amber-50 focus-ring">
+                                <i data-lucide="key-round" class="h-4 w-4 text-amber-600" aria-hidden="true"></i>
+                                <span class="text-sm font-semibold text-slate-700 group-hover:text-amber-800">Account &amp; password</span>
                             </button>
                             <button type="button" @click="openAdminWorkspace('library')" class="group flex min-h-20 flex-col items-start justify-between rounded-xl border border-slate-200 p-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50 focus-ring">
                                 <i data-lucide="library" class="h-4 w-4 text-emerald-600" aria-hidden="true"></i>
@@ -987,13 +976,11 @@
                 </div>
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                     <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Awaiting Review</span>
-                        <i data-lucide="inbox" class="w-4 h-4 text-amber-500" aria-hidden="true"></i>
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Added This Month</span>
+                        <i data-lucide="calendar-plus" class="w-4 h-4 text-teal-500" aria-hidden="true"></i>
                     </div>
-                    <p class="text-3xl font-bold text-slate-900" x-text="submissionCounts.pending"></p>
-                    <button type="button" @click="openSubmissions()" class="text-xs text-indigo-600 font-medium hover:text-indigo-800 mt-1 focus-ring rounded px-1 py-0.5">
-                        Review submissions →
-                    </button>
+                    <p class="text-3xl font-bold text-slate-900" x-text="recentUploadCount"></p>
+                    <p class="text-xs text-slate-500 mt-2">Resources published in the last 30 days</p>
                 </div>
             </div>
 
@@ -1898,228 +1885,6 @@
             </div>
         </div>
 
-        <!-- Legacy submission archive (new uploads publish directly) -->
-        <div x-show="isStaff && currentView === 'submissions'" x-transition x-cloak>
-            <div class="max-w-4xl mx-auto mb-8">
-                <button type="button" @click="currentView = 'library'" class="text-slate-500 hover:text-slate-900 flex items-center gap-2 transition-colors mb-3 focus-ring rounded-md">
-                    <i data-lucide="arrow-left" class="w-4 h-4" aria-hidden="true"></i>
-                    Back to Library
-                </button>
-                <div class="flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                        <h2 class="text-3xl font-bold text-slate-900">Legacy Submission Archive</h2>
-                        <p class="text-slate-600 mt-2 max-w-2xl">This archive is retained for older review records. Teacher login is removed; new resources publish directly to GitHub from the Upload Resource page.</p>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <button type="button" @click="refreshCloudQueue()" :disabled="cloudQueue.loading"
-                                class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-4 py-2.5 rounded-lg font-medium hover:bg-slate-50 transition-colors disabled:opacity-50 focus-ring">
-                            <i data-lucide="refresh-cw" class="w-4 h-4" :class="cloudQueue.loading && 'animate-spin'" aria-hidden="true"></i>
-                            <span x-text="cloudQueue.loading ? 'Checking…' : 'Refresh queue'"></span>
-                        </button>
-                        <button type="button" @click="openUpload()"
-                                class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm focus-ring">
-                            <i data-lucide="upload" class="w-4 h-4" aria-hidden="true"></i>
-                            Upload Resource
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Legacy queue status -->
-                <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                    <i data-lucide="archive" class="w-4 h-4 flex-shrink-0" aria-hidden="true"></i>
-                    <span>Older review records are read-only here. New admin uploads publish directly into <code>apps/</code>.</span>
-                    <span class="text-xs opacity-75" x-show="cloudQueue.loadedAt" x-cloak
-                          x-text="'Updated ' + new Date(cloudQueue.loadedAt).toLocaleTimeString()"></span>
-                    <span class="text-xs font-medium text-red-700" x-show="cloudQueue.error" x-cloak x-text="cloudQueue.error"></span>
-                </div>
-            </div>
-
-            <!-- Pending review -->
-            <section aria-labelledby="submissions-pending-heading" class="mb-12">
-                <h3 id="submissions-pending-heading" class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-                    <span class="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded-full" x-text="pendingSubmissions.length"></span>
-                    Waiting for review
-                </h3>
-
-                <div x-show="pendingSubmissions.length === 0" class="bg-white rounded-xl border border-slate-200 p-10 text-center">
-                    <i data-lucide="check-circle-2" class="mx-auto h-10 w-10 text-emerald-500" aria-hidden="true"></i>
-                    <p class="text-slate-500 mt-3">Nothing is waiting. New files publish directly from Upload Resource.</p>
-                </div>
-
-                <ul role="list" class="space-y-5">
-                    <template x-for="record in pendingSubmissions" :key="record.id">
-                        <li class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                            <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
-                                <div class="min-w-0">
-                                    <h4 class="font-bold text-slate-900 break-words" x-text="record.title"></h4>
-                                    <p class="text-xs text-slate-400 break-all mt-0.5" x-text="record.fileName + ' · ' + formatBytes(record.size)"></p>
-                                </div>
-                                <div class="flex items-center gap-2 flex-shrink-0">
-                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ring-1"
-                                          :class="record.cloudQueued ? 'bg-sky-50 text-sky-700 ring-sky-200' : 'bg-slate-100 text-slate-600 ring-slate-200'"
-                                          :title="record.cloudQueued
-                                              ? 'Staged in the GitHub repository — visible to administrators on every device, and not in the public library'
-                                              : 'Stored in this browser only'">
-                                        <i :data-lucide="record.cloudQueued ? 'cloud' : 'monitor'" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                        <span x-text="record.cloudQueued ? 'In GitHub Cloud' : 'This device'"></span>
-                                    </span>
-                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ring-1"
-                                          :class="submissionStatusAccent(record.status)">
-                                        <i data-lucide="clock" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                        <span x-text="submissionStatusLabel(record.status)"></span>
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div class="flex flex-wrap items-center gap-1.5 mb-3">
-                                <span x-show="record.subject" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ring-1"
-                                      :class="subjectAccent(record.subject)" x-text="record.subject"></span>
-                                <span x-show="record.years.length" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600 ring-1 ring-slate-200"
-                                      x-text="formatYears(record.years)"></span>
-                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ring-1"
-                                      :class="visibilityAccent(record.visibility)" x-text="visibilityLabel(record.visibility)"></span>
-                                <span x-show="record.resourceType" class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-50 text-slate-500 ring-1 ring-slate-200" x-text="record.resourceType"></span>
-                            </div>
-
-                            <p class="text-sm text-slate-600 mb-4" x-show="record.description" x-text="record.description"></p>
-
-                            <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-xs text-slate-500 border-t border-slate-100 pt-4 mb-5">
-                                <div class="flex gap-2"><dt class="text-slate-400 w-28 flex-shrink-0">Teacher / owner</dt><dd class="font-medium text-slate-600" x-text="record.owner"></dd></div>
-                                <div class="flex gap-2" x-show="record.department"><dt class="text-slate-400 w-28 flex-shrink-0">Department</dt><dd class="font-medium text-slate-600" x-text="record.department"></dd></div>
-                                <div class="flex gap-2"><dt class="text-slate-400 w-28 flex-shrink-0">Language</dt><dd class="font-medium text-slate-600" x-text="record.language"></dd></div>
-                                <div class="flex gap-2" x-show="record.topic"><dt class="text-slate-400 w-28 flex-shrink-0">Topic</dt><dd class="font-medium text-slate-600" x-text="record.topic"></dd></div>
-                                <div class="flex gap-2" x-show="record.academicYear"><dt class="text-slate-400 w-28 flex-shrink-0">Academic year</dt><dd class="font-medium text-slate-600" x-text="record.academicYear"></dd></div>
-                                <div class="flex gap-2"><dt class="text-slate-400 w-28 flex-shrink-0">Version</dt><dd class="font-medium text-slate-600" x-text="record.version"></dd></div>
-                                <div class="flex gap-2" x-show="record.reviewDate"><dt class="text-slate-400 w-28 flex-shrink-0">Review by</dt><dd class="font-medium text-slate-600" x-text="formatDate(record.reviewDate)"></dd></div>
-                                <div class="flex gap-2" x-show="record.licence"><dt class="text-slate-400 w-28 flex-shrink-0">Licence</dt><dd class="font-medium text-slate-600" x-text="record.licence"></dd></div>
-                                <div class="flex gap-2" x-show="record.keywords.length"><dt class="text-slate-400 w-28 flex-shrink-0">Keywords</dt><dd class="font-medium text-slate-600"><template x-for="tag in record.keywords.slice(0, 6)" :key="tag"><span class="mr-1" x-text="'#' + tag"></span></template></dd></div>
-                                <div class="flex gap-2 sm:col-span-2 lg:col-span-3" x-show="record.accessibility"><dt class="text-slate-400 w-28 flex-shrink-0">Accessibility</dt><dd class="font-medium text-slate-600" x-text="record.accessibility"></dd></div>
-                                <div class="flex gap-2"><dt class="text-slate-400 w-28 flex-shrink-0">Submitted</dt><dd class="font-medium text-slate-600" x-text="formatDate(record.submittedAt)"></dd></div>
-                            </dl>
-
-                            <div class="flex flex-wrap gap-2">
-                                <button type="button" @click="openSubmissionPreview(record)"
-                                        class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors focus-ring">
-                                    <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i> Preview
-                                </button>
-                                <button type="button" @click="downloadSubmission(record)"
-                                        class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors focus-ring">
-                                    <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i> Download
-                                </button>
-                                <span class="flex-1"></span>
-                                <!-- Administrator review actions. With GitHub Auto-Publish
-                                     connected (Settings), approval also commits the file to
-                                     apps/ and merges library.json automatically. -->
-                                <button type="button" x-show="isAdmin" @click="approveSubmission(record.id)"
-                                        :disabled="publishingSubmissionId === record.id"
-                                        class="inline-flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50 focus-ring">
-                                    <i :data-lucide="publishingSubmissionId === record.id ? 'loader-2' : 'check'"
-                                       class="w-4 h-4" :class="publishingSubmissionId === record.id && 'animate-spin'" aria-hidden="true"></i>
-                                    <span x-text="publishingSubmissionId === record.id
-                                        ? 'Publishing…'
-                                        : (autoPublishReady ? 'Approve & Publish' : 'Approve')"></span>
-                                </button>
-                                <button type="button" x-show="isAdmin" @click="declineSubmission(record.id)"
-                                        class="inline-flex items-center gap-2 border border-rose-200 text-rose-600 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-rose-50 transition-colors focus-ring">
-                                    <i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i> Decline
-                                </button>
-                            </div>
-                        </li>
-                    </template>
-                </ul>
-            </section>
-
-            <!-- Reviewed -->
-            <section aria-labelledby="submissions-reviewed-heading">
-                <h3 id="submissions-reviewed-heading" class="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-                    <span class="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-full" x-text="reviewedSubmissions.length"></span>
-                    Reviewed
-                </h3>
-
-                <div x-show="reviewedSubmissions.length === 0" class="bg-white rounded-xl border border-slate-200 p-10 text-center">
-                    <i data-lucide="archive" class="mx-auto h-10 w-10 text-slate-300" aria-hidden="true"></i>
-                    <p class="text-slate-500 mt-3">Reviewed submissions and their outcomes will appear here.</p>
-                </div>
-
-                <ul role="list" class="space-y-4">
-                    <template x-for="record in reviewedSubmissions" :key="record.id">
-                        <li class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                            <div class="flex flex-wrap items-start justify-between gap-3">
-                                <div class="min-w-0">
-                                    <h4 class="font-bold text-slate-900 break-words" x-text="record.title"></h4>
-                                    <p class="text-xs text-slate-400 break-all mt-0.5" x-text="record.fileName"></p>
-                                </div>
-                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ring-1 flex-shrink-0"
-                                      :class="submissionStatusAccent(record.status)"
-                                      :title="record.reviewedAt ? 'Reviewed ' + formatDate(record.reviewedAt) : ''">
-                                    <i :data-lucide="record.status === 'approved' ? 'check' : 'x'" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                    <span x-text="submissionStatusLabel(record.status)"></span>
-                                </span>
-                            </div>
-
-                            <p x-show="record.status === 'rejected' && record.reviewNote"
-                               class="mt-3 text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2"
-                               x-text="'Administrator’s note: ' + record.reviewNote"></p>
-
-                            <p x-show="record.status === 'approved' && record.published"
-                               class="mt-3 text-sm text-sky-700 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 inline-flex flex-wrap items-center gap-2">
-                                <i data-lucide="cloud" class="w-4 h-4" aria-hidden="true"></i>
-                                <span>Published to the public repository — available on every device.</span>
-                                <a x-show="record.commitUrl" :href="record.commitUrl" target="_blank" rel="noopener noreferrer"
-                                   class="inline-flex items-center gap-1 font-semibold underline decoration-sky-300 hover:decoration-sky-600 focus-ring rounded">
-                                    View the commit
-                                    <i data-lucide="external-link" class="w-3 h-3" aria-hidden="true"></i>
-                                </a>
-                            </p>
-
-                            <div class="flex flex-wrap gap-2 mt-4">
-                                <button type="button" x-show="record.status === 'approved'" @click="viewInLibrary(record)"
-                                        class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors focus-ring">
-                                    <i data-lucide="search" class="w-4 h-4" aria-hidden="true"></i> View in Library
-                                </button>
-                                <button type="button" x-show="record.status === 'approved'" @click="openSubmissionPreview(record)"
-                                        class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors focus-ring">
-                                    <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i> Preview
-                                </button>
-                                <!-- Administrator: publish the approved resource on GitHub.
-                                     One click with a connected token; the copy/paste flow
-                                     below stays as the manual fallback. -->
-                                <span x-show="isAdmin && record.status === 'approved' && !record.published" class="inline-flex flex-wrap gap-2">
-                                    <button type="button" x-show="githubAuth.connected" @click="publishSubmissionToGithub(record.id)"
-                                            :disabled="publishingSubmissionId === record.id"
-                                            class="inline-flex items-center gap-2 bg-indigo-600 text-white px-3.5 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 focus-ring">
-                                        <i :data-lucide="publishingSubmissionId === record.id ? 'loader-2' : 'cloud-upload'"
-                                           class="w-4 h-4" :class="publishingSubmissionId === record.id && 'animate-spin'" aria-hidden="true"></i>
-                                        <span x-text="publishingSubmissionId === record.id ? 'Publishing…' : 'Publish to GitHub'"></span>
-                                    </button>
-                                    <button type="button" @click="copySubmissionMetadata(record)"
-                                            class="inline-flex items-center gap-2 bg-slate-900 text-white px-3.5 py-2 rounded-lg text-sm font-semibold hover:bg-slate-800 transition-colors focus-ring">
-                                        <i data-lucide="clipboard-copy" class="w-4 h-4" aria-hidden="true"></i> Copy metadata
-                                    </button>
-                                    <a :href="githubUploadUrl()" target="_blank" rel="noopener noreferrer"
-                                       class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-3.5 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors focus-ring">
-                                        <i data-lucide="github" class="w-4 h-4" aria-hidden="true"></i> Upload to GitHub
-                                        <i data-lucide="external-link" class="w-3.5 h-3.5" aria-hidden="true"></i>
-                                    </a>
-                                    <button type="button" @click="markPublished(record.id)"
-                                            class="inline-flex items-center gap-2 border border-sky-200 text-sky-700 px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-sky-50 transition-colors focus-ring"
-                                            title="After uploading the file and pasting the metadata on GitHub">
-                                        <i data-lucide="cloud-upload" class="w-4 h-4" aria-hidden="true"></i> Done — published
-                                    </button>
-                                </span>
-                                <span class="flex-1"></span>
-                                <button type="button" x-show="isAdmin" @click="deleteSubmission(record.id)"
-                                        :aria-label="'Permanently remove the submission ' + record.title"
-                                        class="p-2.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring">
-                                    <i data-lucide="trash-2" class="w-4 h-4" aria-hidden="true"></i>
-                                </button>
-                            </div>
-                        </li>
-                    </template>
-                </ul>
-            </section>
-        </div>
-
         <!-- Settings View (administrator only) -->
         <div x-show="isAdmin && currentView === 'settings'" x-transition x-cloak class="max-w-2xl mx-auto">
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sm:p-8">
@@ -2217,6 +1982,111 @@
                         <a :href="githubTokenUrl()" target="_blank" rel="noopener noreferrer" class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:underline">
                             Create or revoke a GitHub token <i data-lucide="external-link" class="w-3.5 h-3.5" aria-hidden="true"></i>
                         </a>
+                    </section>
+
+                    <!-- Administrator account: rotate the administrator username and
+                         password. Locked until the master password is entered. -->
+                    <section class="pt-6 border-t scroll-mt-24" id="admin-account-section" aria-labelledby="admin-account-heading">
+                        <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+                            <div>
+                                <h3 id="admin-account-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                    <i data-lucide="user-cog" class="w-4 h-4" aria-hidden="true"></i> Administrator account
+                                </h3>
+                                <p class="text-xs text-slate-500 mt-1">Change the administrator username and password used to sign in to this website.</p>
+                            </div>
+                            <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1"
+                                  :class="adminAccount.unlocked ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-slate-200'">
+                                <i :data-lucide="adminAccount.unlocked ? 'unlock' : 'lock'" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                                <span x-text="adminAccount.unlocked ? 'Unlocked' : 'Locked'"></span>
+                            </span>
+                        </div>
+
+                        <!-- Master password gate: nothing about the account is shown until it opens. -->
+                        <div x-show="!adminAccount.unlocked" class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            <label for="master-password" class="block text-xs font-medium text-slate-600 mb-1">Master password</label>
+                            <div class="relative">
+                                <input id="master-password" :type="adminAccount.showMasterPassword ? 'text' : 'password'" x-model="adminAccount.masterPassword"
+                                       @keydown.enter.prevent="unlockAdminAccount()" autocomplete="current-password" spellcheck="false"
+                                       placeholder="Enter the master password" aria-describedby="master-password-note"
+                                       class="w-full px-4 py-2.5 pr-12 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                                       :class="adminAccount.error ? 'border-red-300' : 'border-slate-200'">
+                                <button type="button" @click="toggleMasterPasswordVisibility()"
+                                        :aria-label="adminAccount.showMasterPassword ? 'Hide the master password' : 'Show the master password'"
+                                        class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700 rounded-md focus-ring">
+                                    <i :data-lucide="adminAccount.showMasterPassword ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
+                                </button>
+                            </div>
+                            <p id="master-password-note" class="text-[11px] text-slate-500 mt-2">This is not the administrator password. It only opens this section, so the administrator sign-in cannot be changed by someone who is merely signed in.</p>
+                            <p x-show="adminAccount.error" x-text="adminAccount.error" class="text-sm text-red-600 mt-2" role="alert"></p>
+                            <button type="button" @click="unlockAdminAccount()" :disabled="adminAccount.checking"
+                                    class="mt-3 inline-flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-slate-800 disabled:opacity-50 focus-ring">
+                                <i :data-lucide="adminAccount.checking ? 'loader-2' : 'lock'" class="w-4 h-4" :class="adminAccount.checking && 'animate-spin'" aria-hidden="true"></i>
+                                <span x-text="adminAccount.checking ? 'Checking…' : 'Unlock account section'"></span>
+                            </button>
+                        </div>
+
+                        <!-- Rotation form, available once the master password is accepted. -->
+                        <div x-show="adminAccount.unlocked" x-cloak class="space-y-4">
+                            <div class="rounded-lg border border-amber-100 bg-amber-50 p-4 flex gap-2">
+                                <i data-lucide="shield-alert" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" aria-hidden="true"></i>
+                                <p class="text-xs text-amber-800">
+                                    Saving commits a new random salt and its SHA-256 digest to <code>assets/js/config.js</code> on GitHub.
+                                    The passwords themselves are never written to a file, a commit or a browser store — only the digest.
+                                    The change works on this device immediately, and on every other device once GitHub Pages finishes deploying.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label for="admin-username" class="block text-xs font-medium text-slate-600 mb-1">Administrator username</label>
+                                <input id="admin-username" type="text" x-model="adminAccount.form.username" spellcheck="false" autocomplete="username"
+                                       class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+
+                            <div class="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                    <label for="admin-new-password" class="block text-xs font-medium text-slate-600 mb-1">New administrator password</label>
+                                    <input id="admin-new-password" type="password" x-model="adminAccount.form.password" autocomplete="new-password"
+                                           placeholder="Leave blank to keep it"
+                                           class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                                </div>
+                                <div>
+                                    <label for="admin-confirm-password" class="block text-xs font-medium text-slate-600 mb-1">Confirm new password</label>
+                                    <input id="admin-confirm-password" type="password" x-model="adminAccount.form.confirmPassword" autocomplete="new-password"
+                                           class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                                </div>
+                                <div>
+                                    <label for="admin-new-master" class="block text-xs font-medium text-slate-600 mb-1">New master password</label>
+                                    <input id="admin-new-master" type="password" x-model="adminAccount.form.masterPassword" autocomplete="new-password"
+                                           placeholder="Leave blank to keep it"
+                                           class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                                </div>
+                                <div>
+                                    <label for="admin-confirm-master" class="block text-xs font-medium text-slate-600 mb-1">Confirm new master password</label>
+                                    <input id="admin-confirm-master" type="password" x-model="adminAccount.form.confirmMasterPassword" autocomplete="new-password"
+                                           class="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+                                </div>
+                            </div>
+                            <p class="text-[11px] text-slate-500">Passwords must be at least 8 characters. Only the hash is stored, so a forgotten password cannot be recovered from the website — use this section again while you can still sign in, or edit <code>assets/js/config.js</code> in GitHub.</p>
+
+                            <p x-show="adminAccount.notice" class="text-sm text-emerald-700 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2" role="status" x-cloak>
+                                <span x-text="adminAccount.notice"></span>
+                                <a x-show="adminAccount.noticeUrl" :href="adminAccount.noticeUrl" target="_blank" rel="noopener noreferrer"
+                                   class="ml-1 font-semibold underline">View the commit</a>
+                            </p>
+                            <p x-show="adminAccount.error" x-text="adminAccount.error" class="text-sm text-red-600" role="alert"></p>
+
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" @click="saveAdminAccount()" :disabled="adminAccount.saving"
+                                        class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 focus-ring">
+                                    <i :data-lucide="adminAccount.saving ? 'loader-2' : 'save'" class="w-4 h-4" :class="adminAccount.saving && 'animate-spin'" aria-hidden="true"></i>
+                                    <span x-text="adminAccount.saving ? 'Saving to GitHub…' : 'Save account changes'"></span>
+                                </button>
+                                <button type="button" @click="lockAdminAccount({ announce: true })" :disabled="adminAccount.saving"
+                                        class="inline-flex items-center gap-2 border border-slate-300 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 focus-ring">
+                                    <i data-lucide="lock" class="w-4 h-4" aria-hidden="true"></i> Lock this section
+                                </button>
+                            </div>
+                        </div>
                     </section>
 
                     <section class="pt-6 border-t" aria-labelledby="abacus-heading">

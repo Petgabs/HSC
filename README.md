@@ -14,7 +14,14 @@ repository; GitHub Pages then makes them available to students.
   support.
 - Removes the separate teacher login and teacher credential management. The
   website has one administrator sign-in; admin uploads publish directly rather
-  than entering a teacher review queue.
+  than entering a teacher review queue. The legacy **Review Submissions**
+  button and its page are gone with it.
+- Adds an **Administrator account** section to **Cloud Settings** for changing
+  the administrator username, the administrator password and the master
+  password. It is locked until the master password is entered, and saving
+  commits a fresh salt and SHA-256 digest into `assets/js/config.js` on GitHub
+  so the change reaches every device after the next GitHub Pages deployment
+  (and works on the device that made it immediately).
 - Remembers the administrator's verified GitHub token on the device after the
   first save. Reloading the page, opening a new tab, closing the browser or
   signing out never asks for the token again; **Forget token on this device**
@@ -81,7 +88,8 @@ repository; GitHub Pages then makes them available to students.
    saved token lives only in GitHub's private Actions secret store and can be
    used by explicitly configured repository workflows.
 
-The client-side admin password check is only a convenience gate for the admin
+The client-side admin password check — and the master password that guards the
+Administrator account section — are only convenience gates for the admin
 controls: a static GitHub Pages site cannot provide server-side authentication.
 The GitHub token is the actual write credential, and GitHub enforces its
 permissions. Because this repository is public, the stored digest can be
@@ -131,8 +139,43 @@ The plain password is never committed. Sign-in compares the digest of the
 entered password against `passwordHash`, so the current password is only known
 to whoever was given it out of band.
 
-To rotate the password, generate a new salt and recompute the digest, then
-replace both values in `assets/js/config.js`:
+A second gate, `SITE_CONFIG.master` in the same file, holds the master password
+that unlocks the **Administrator account** section of Cloud Settings. It is
+stored the same way — a `salt` and a `passwordHash`, never the plain password —
+and its shipped default is shared with the administrator out of band.
+
+### Changing the administrator account from Cloud Settings
+
+1. Sign in as the administrator and open **Cloud Settings → Administrator
+   account**. The section is locked and shows nothing but the master-password
+   prompt.
+2. Enter the master password and choose **Unlock account section**. This is not
+   the administrator password: it only opens this section, so a change to the
+   administrator sign-in needs both.
+3. Set the new username and/or password. Leave a password blank to keep the
+   current one. Passwords must be at least 8 characters and be typed twice.
+   The master password can be rotated in the same save.
+4. Choose **Save account changes**. A connected GitHub token (Contents: Read and
+   write) is required, because the site rewrites `assets/js/config.js` in the
+   repository: it generates a fresh random salt, hashes the new password with it
+   in the browser, and commits only the username, the salt and the digest. The
+   typed passwords are never written to a file, a commit or browser storage.
+5. The new credential is active on that device immediately. Every other device
+   picks it up when GitHub Pages finishes deploying `assets/js/config.js`
+   (usually within a minute). Until then, the device that made the change keeps
+   a copy in `localStorage` under `schoolcloud.admin.credentials.v1`; that copy
+   is discarded automatically once the deployed config.js changes, and **Clear
+   local settings** also removes it. It holds a digest, never a password.
+6. **Lock this section** closes it again, and signing out locks it too.
+
+Only the digest is stored anywhere, so a forgotten password cannot be recovered
+from the website: rotate it again from this section while still signed in, or
+edit `assets/js/config.js` in GitHub by hand (below).
+
+### Rotating the credentials by hand
+
+Generate a new salt and recompute the digest, then replace the values in
+`assets/js/config.js`:
 
 ```sh
 salt=$(openssl rand -hex 16)
@@ -143,7 +186,7 @@ printf 'salt: %s\npasswordHash: %s\n' "$salt" \
 
 Publishing that change and reloading the site is enough — no database or server
 deployment step is involved. Blank out the three fields to disable admin sign-in
-completely.
+completely; blanking `SITE_CONFIG.master` disables the account section instead.
 
 ## Counters: live Abacus totals plus a GitHub-saved record
 

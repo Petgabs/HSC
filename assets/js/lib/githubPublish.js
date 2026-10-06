@@ -341,6 +341,103 @@ export async function deleteResourceFromGitHub({ owner, repo, branch = 'main', t
   return { path, commitUrl: result?.commit?.html_url || '' };
 }
 
+/**
+ * Administrator credentials live in the shipped `assets/js/config.js`, so a
+ * rotation is a normal repository commit: this static site has no server and
+ * no database to hold them in. Only the username, a fresh salt and the
+ * SHA-256 digest are ever written — never a plain password.
+ */
+export const ADMIN_CONFIG_PATH = 'assets/js/config.js';
+
+const GATE_USERNAME_PATTERN = /^[A-Za-z0-9._@+-]{3,64}$/;
+const GATE_SALT_PATTERN = /^[a-f0-9]{16,128}$/;
+const GATE_HASH_PATTERN = /^[a-f0-9]{64}$/;
+
+function escapeSingleQuoted(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function assertGateValue(value, pattern, label) {
+  const clean = String(value || '').trim();
+  if (!pattern.test(clean)) throw new Error(`The new ${label} is not in the expected format. Nothing was written to the repository.`);
+  return clean;
+}
+
+/**
+ * Replace one credential block inside the shipped config source. The block is
+ * matched by name (`admin:` / `master:`) and only the quoted values inside it
+ * are rewritten, so the rest of the file — comments, freezing, ordering — is
+ * preserved byte for byte.
+ */
+export function replaceConfigGateValues(source, blockName, values) {
+  const text = String(source || '');
+  const block = new RegExp(`(\\n\\s*${blockName}:\\s*(?:Object\\.freeze\\(\\s*)?\\{)([^}]*)(\\})`);
+  const match = text.match(block);
+  if (!match) return null;
+  let body = match[2];
+  for (const [field, value] of Object.entries(values)) {
+    if (value === undefined || value === null) continue;
+    const fieldPattern = new RegExp(`(${field}:\\s*)'[^']*'`);
+    if (!fieldPattern.test(body)) return null;
+    const replacement = escapeSingleQuoted(value);
+    body = body.replace(fieldPattern, (_full, prefix) => `${prefix}'${replacement}'`);
+  }
+  return text.replace(block, (_full, opening, _body, closing) => `${opening}${body}${closing}`);
+}
+
+/**
+ * Rewrite the administrator and master-password blocks of `config.js`.
+ * Exported as a pure function so the rotation can be tested without touching
+ * GitHub. Throws rather than writing a half-updated file.
+ */
+export function replaceConfigCredentials(source, { admin, master } = {}) {
+  let next = String(source || '');
+  if (admin) {
+    const updated = replaceConfigGateValues(next, 'admin', {
+      username: assertGateValue(admin.username, GATE_USERNAME_PATTERN, 'administrator username'),
+      salt: assertGateValue(admin.salt, GATE_SALT_PATTERN, 'administrator salt'),
+      passwordHash: assertGateValue(admin.passwordHash, GATE_HASH_PATTERN, 'administrator password digest')
+    });
+    if (updated === null) throw new Error('The administrator block could not be found in assets/js/config.js. Nothing was changed; edit the file in GitHub instead.');
+    next = updated;
+  }
+  if (master) {
+    const updated = replaceConfigGateValues(next, 'master', {
+      salt: assertGateValue(master.salt, GATE_SALT_PATTERN, 'master-password salt'),
+      passwordHash: assertGateValue(master.passwordHash, GATE_HASH_PATTERN, 'master-password digest')
+    });
+    if (updated === null) throw new Error('The master-password block could not be found in assets/js/config.js. Nothing was changed; edit the file in GitHub instead.');
+    next = updated;
+  }
+  return next;
+}
+
+/**
+ * Commit rotated administrator credentials to the repository. Requires a
+ * connected token with Contents: Read and write. The plain passwords never
+ * reach this function — the caller hashes them first.
+ */
+export async function saveAdminCredentialsToGitHub({ owner, repo, branch = 'main', token, admin, master }) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Connect a GitHub token in Settings before changing the administrator sign-in.');
+  const file = await readContents({ owner, repo, branch, path: ADMIN_CONFIG_PATH, token: cleanToken });
+  if (!file?.sha) throw new Error('assets/js/config.js was not found in the repository. Nothing was changed.');
+  const current = decodeBase64Text(file.content);
+  const next = replaceConfigCredentials(current, { admin, master });
+  if (next === current) return { path: ADMIN_CONFIG_PATH, changed: false, commitUrl: '' };
+  const result = await putContents({
+    owner, repo, branch, path: ADMIN_CONFIG_PATH, token: cleanToken,
+    content: encodeBase64Bytes(new TextEncoder().encode(next)),
+    message: 'Update administrator sign-in credentials',
+    sha: file.sha
+  });
+  return {
+    path: ADMIN_CONFIG_PATH,
+    changed: true,
+    commitUrl: result?.commit?.html_url || ''
+  };
+}
+
 export async function readPublicRepositoryFiles({ owner, repo, branch = 'main' }) {
   const query = new URLSearchParams({ ref: branch });
   const response = await fetch(`${apiUrl(owner, repo, `contents/apps?${query}`)}`, {

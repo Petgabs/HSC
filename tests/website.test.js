@@ -31,6 +31,45 @@ describe('School Cloud release configuration', () => {
     expect(html).not.toContain('Clear token from this tab');
   });
 
+  it('removes the review-submissions button and its page from the administrator interface', async () => {
+    const [html, app] = await Promise.all([read('../index.html'), read('../assets/js/app.js')]);
+    expect(html).not.toContain('Review Submissions');
+    expect(html).not.toContain('Review submissions');
+    expect(html).not.toContain('openSubmissions()');
+    expect(html).not.toContain("currentView === 'submissions'");
+    expect(html).not.toContain('submissionCounts');
+    expect(html).not.toContain('Awaiting Review');
+    expect(app).not.toContain('openSubmissions');
+    expect(app).not.toContain('submissionRecords');
+    expect(app).not.toContain('refreshCloudQueue');
+  });
+
+  it('guards the administrator account section with a master password and commits rotations to GitHub', async () => {
+    const [html, app, config, publisher] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../assets/js/config.js'),
+      read('../assets/js/lib/githubPublish.js')
+    ]);
+    // Both gates ship a salt and a digest only — never a plain password, for
+    // the administrator sign-in or for the master password.
+    expect(config).toMatch(/master:\s*\{/);
+    expect(config.match(/passwordHash:\s*'[0-9a-f]{64}'/g)).toHaveLength(2);
+    expect(config).not.toMatch(/\bpassword\s*:\s*'/i);
+    // The section is locked until the master password is accepted.
+    expect(html).toContain('id="admin-account-section"');
+    expect(html).toContain('id="master-password"');
+    expect(html).toContain('@click="unlockAdminAccount()"');
+    expect(html).toContain('@click="saveAdminAccount()"');
+    expect(html).toContain('@click="lockAdminAccount({ announce: true })"');
+    expect(app).toContain('verifyConfiguredMaster');
+    expect(app).toContain('saveAdminCredentialsToGitHub');
+    // A rotation is remembered on the device only until the Pages deployment
+    // of config.js replaces it.
+    expect(app).toContain('schoolcloud.admin.credentials.v1');
+    expect(app).toContain('restoreAdminCredentials');
+    expect(publisher).toContain("ADMIN_CONFIG_PATH = 'assets/js/config.js'");
+    expect(publisher).toContain('saveAdminCredentialsToGitHub');
+  });
+
   it('ships with no GitHub credential and allows only the Abacus counter origin', async () => {
     const [config, html, headers] = await Promise.all([
       read('../assets/js/config.js'), read('../index.html'), read('../_headers')

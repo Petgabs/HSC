@@ -7,6 +7,13 @@
  * share it with the administrator out of band. Rotate it by generating a fresh
  * salt and recomputing the digest.
  *
+ * The `master` block is the master password that unlocks the Administrator
+ * account section of Cloud Settings. It is stored exactly the same way — a salt
+ * and a digest, never the plain password — and its shipped default is shared
+ * with the administrator out of band. Rotating either credential from Cloud
+ * Settings commits a new salt and digest into this file on GitHub, so the
+ * change reaches every device when GitHub Pages finishes deploying.
+ *
  * Never put a GitHub token in this file. The administrator pastes a token in
  * Settings; the site encrypts it for a one-time GitHub Actions repository
  * secret, and remembers it in this browser's storage on that device so the
@@ -19,11 +26,19 @@ export const SITE_CONFIG = Object.freeze({
     name: 'HSC',
     branch: 'main'
   }),
-  admin: Object.freeze({
+  // `admin` and `master` are deliberately not frozen: Cloud Settings replaces
+  // these three values (and the two below) in memory the moment a rotation is
+  // committed, so the new credential works on this device immediately instead
+  // of only after the next GitHub Pages deployment.
+  admin: {
     username: 'hsc-admin',
-    salt: '175cdc5b0ca6816f4bd3ace5af69aa6e',
-    passwordHash: '2c3c6a87fc12ae957a765902d81307342ecbaad9904a7bf78c768df8a861a277'
-  }),
+    salt: '38db6ef217b6b8073322397c4b77028d',
+    passwordHash: 'da1e5613d14c67441a073860fe92ff653ba9f6bba38954534afb5218c60e6822'
+  },
+  master: {
+    salt: '23fd392e297167dd7efb39cc345c4808',
+    passwordHash: 'e5286ed75095b3ae3e8dd2fbed216e20e2e575cb69b31bd4270b7d544db37986'
+  },
   abacus: Object.freeze({
     baseUrl: 'https://abacus.jasoncameron.dev',
     namespace: 'petgabs-hsc-schoolcloud',
@@ -31,6 +46,58 @@ export const SITE_CONFIG = Object.freeze({
   }),
   maxUploadBytes: 50 * 1024 * 1024
 });
+
+function copyGate(gate) {
+  return {
+    username: typeof gate?.username === 'string' ? gate.username : '',
+    salt: typeof gate?.salt === 'string' ? gate.salt : '',
+    passwordHash: typeof gate?.passwordHash === 'string' ? gate.passwordHash.toLowerCase() : ''
+  };
+}
+
+/** Read the administrator sign-in gate the site is currently enforcing. */
+export function readAdminGate() {
+  return copyGate(SITE_CONFIG.admin);
+}
+
+/** Read the master-password gate protecting the Administrator account section. */
+export function readMasterGate() {
+  return copyGate(SITE_CONFIG.master);
+}
+
+/**
+ * Apply a rotated administrator credential for the rest of this page visit.
+ * Only a username plus a salt/digest pair is ever held; the plain password is
+ * hashed by the caller and never stored anywhere.
+ */
+export function applyAdminGate(credentials = {}) {
+  const next = copyGate({ ...SITE_CONFIG.admin, ...credentials });
+  if (next.username) SITE_CONFIG.admin.username = next.username;
+  if (next.salt) SITE_CONFIG.admin.salt = next.salt;
+  if (next.passwordHash) SITE_CONFIG.admin.passwordHash = next.passwordHash;
+  return readAdminGate();
+}
+
+/** Apply a rotated master password for the rest of this page visit. */
+export function applyMasterGate(credentials = {}) {
+  const next = copyGate({ ...SITE_CONFIG.master, ...credentials });
+  if (next.salt) SITE_CONFIG.master.salt = next.salt;
+  if (next.passwordHash) SITE_CONFIG.master.passwordHash = next.passwordHash;
+  return readMasterGate();
+}
+
+/**
+ * A fingerprint of both shipped gates. A device that just rotated a credential
+ * compares this against the signature it recorded before the change: while the
+ * two still match, GitHub Pages has not deployed the new config yet and the
+ * device keeps using its own copy; once the deployed file changes, the shipped
+ * config wins again and the local copy is dropped.
+ */
+export function gateSignature() {
+  const admin = readAdminGate();
+  const master = readMasterGate();
+  return [admin.username, admin.salt, admin.passwordHash, master.salt, master.passwordHash].join('|');
+}
 
 export const SUBJECTS = Object.freeze([
   'Mathematics', 'EALD/English', 'CAL', 'BS', 'VA', 'PHY', 'MEX', 'Others'
