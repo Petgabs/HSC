@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.11.0</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.12.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -53,6 +53,18 @@
             </button>
 
             <div class="flex items-center gap-3 sm:gap-4">
+                <!-- Live administrator-online indicator. It reports a
+                     time-bucket heartbeat only, so it never reveals who is
+                     signed in or from which device. -->
+                <div class="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ring-1"
+                     :class="presencePillClass" :title="presence.detail" role="status" aria-live="polite">
+                    <span class="relative flex h-2 w-2" aria-hidden="true">
+                        <span x-show="presence.live" x-cloak class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex h-2 w-2 rounded-full" :class="presenceDotClass"></span>
+                    </span>
+                    <span class="hidden sm:inline" x-text="presence.label"></span>
+                    <i :data-lucide="presence.live ? 'shield-check' : 'shield'" class="h-3.5 w-3.5 sm:hidden" aria-hidden="true"></i>
+                </div>
                 <!-- Visitor counter -->
                 <div class="hidden sm:flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full text-xs font-medium"
                      :title="stats.online ? 'Total visits to this site' : 'Visit counter is offline; showing this device only'">
@@ -683,10 +695,10 @@
                     </div>
                 </div>
                 <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-black/10 pt-3">
-                    <button type="button" @click="syncDownloadStatsToGitHub()" :disabled="statsSyncing || stats.loadingDownloads"
+                    <button type="button" @click="syncDownloadStatsToGitHub()" :disabled="statsSyncing || stats.loadingDownloads || blockedSeconds('sync') > 0"
                             class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-700 disabled:opacity-60 focus-ring">
                         <i :data-lucide="statsSyncing ? 'loader-2' : 'cloud-upload'" class="h-3.5 w-3.5" :class="statsSyncing && 'animate-spin'" aria-hidden="true"></i>
-                        <span x-text="statsSyncing ? 'Saving…' : 'Save counts to GitHub'"></span>
+                        <span x-text="statsSyncing ? 'Saving…' : blockedButtonLabel('sync', 'Save counts to GitHub')"></span>
                     </button>
                     <span class="text-xs opacity-80">GitHub Actions also saves the shared visitor and download totals automatically every 15 minutes. This button runs an immediate admin sync and requires a GitHub token in Settings.</span>
                 </div>
@@ -1130,13 +1142,21 @@
                                             <div class="bg-emerald-500 h-2 rounded-full transition-all" :style="`width: ${sharePercent(app)}%`"></div>
                                         </div>
                                     </td>
-                                    <td class="px-6 py-4 text-right">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center justify-end gap-1">
+                                        <button type="button" @click="verifyPublishedFile(app)" :disabled="verifyingAppId === app.id"
+                                                :aria-label="'Verify the published copy of ' + app.name"
+                                                :title="app.meta.sha256 ? 'Re-read the published file from GitHub and compare it with the recorded SHA-256 fingerprint' : 'No fingerprint was recorded when this file was published. Re-upload it to record one, then verify.'"
+                                                class="p-2 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all focus-ring disabled:opacity-60">
+                                            <i :data-lucide="verifyingAppId === app.id ? 'loader-2' : 'shield-check'" class="w-4 h-4" :class="verifyingAppId === app.id && 'animate-spin'" aria-hidden="true"></i>
+                                        </button>
                                         <button type="button" @click="confirmDeleteApp(app)" :disabled="deletingAppId === app.id"
                                                 :aria-label="'Delete ' + app.name"
                                                 :title="app.source === 'github' ? 'Delete this file from the GitHub repository' : 'Remove this browser-only app'"
                                                 class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring disabled:opacity-60">
                                             <i :data-lucide="deletingAppId === app.id ? 'loader-2' : 'trash-2'" class="w-4 h-4" :class="deletingAppId === app.id && 'animate-spin'" aria-hidden="true"></i>
                                         </button>
+                                        </div>
                                     </td>
                                 </tr>
                             </template>
@@ -1238,13 +1258,21 @@
                                             <div class="bg-amber-500 h-2 rounded-full transition-all" :style="`width: ${sharePercent(resource)}%`"></div>
                                         </div>
                                     </td>
-                                    <td class="px-6 py-4 text-right">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center justify-end gap-1">
+                                        <button type="button" @click="verifyPublishedFile(resource)" :disabled="verifyingAppId === resource.id"
+                                                :aria-label="'Verify the published copy of ' + resource.name"
+                                                :title="resource.meta.sha256 ? 'Re-read the published file from GitHub and compare it with the recorded SHA-256 fingerprint' : 'No fingerprint was recorded when this file was published. Re-upload it to record one, then verify.'"
+                                                class="p-2 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all focus-ring disabled:opacity-60">
+                                            <i :data-lucide="verifyingAppId === resource.id ? 'loader-2' : 'shield-check'" class="w-4 h-4" :class="verifyingAppId === resource.id && 'animate-spin'" aria-hidden="true"></i>
+                                        </button>
                                         <button type="button" @click="confirmDeleteApp(resource)" :disabled="deletingAppId === resource.id"
                                                 :aria-label="'Delete ' + resource.name + (resource.source === 'github' ? ' from GitHub' : '')"
                                                 :title="resource.source === 'github' ? (githubAuth.connected ? 'Delete this ' + fileExtension(resource) + ' file from the GitHub repository, library metadata and saved download counts' : 'Delete this file from GitHub') : 'Remove this local file'"
                                                 class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring disabled:opacity-60">
                                             <i :data-lucide="deletingAppId === resource.id ? 'loader-2' : 'trash-2'" class="w-4 h-4" :class="deletingAppId === resource.id && 'animate-spin'" aria-hidden="true"></i>
                                         </button>
+                                        </div>
                                     </td>
                                 </tr>
                             </template>
@@ -1568,14 +1596,16 @@
                              :class="draftErrors.file ? 'border-red-300' : ''"
                              @dragover.prevent="$event.dataTransfer.dropEffect = 'copy'"
                              @drop.prevent="handleFileDrop($event)">
-                            <input id="resource-file" type="file" @change="handleFileChange"
+                            <input id="resource-file" type="file" @change="handleFileChange" :disabled="submitting"
                                    accept=".html,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                                   class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+                                   :class="submitting ? 'cursor-not-allowed' : 'cursor-pointer'"
+                                   class="absolute inset-0 w-full h-full opacity-0">
                             <div class="space-y-2 pointer-events-none">
                                 <i data-lucide="file-up" class="mx-auto h-12 w-12 text-slate-300" aria-hidden="true"></i>
                                 <div class="text-sm text-slate-600">
                                     <span class="font-semibold text-indigo-600">Click to upload</span> or drag and drop
                                 </div>
+                                <p class="text-[11px] font-medium text-emerald-700">Every file is checked before it is published: real file type, embedded programs or macros, unsafe HTML and a SHA-256 fingerprint.</p>
                                 <p class="text-xs text-slate-400" x-text="draftFile ? 'Selected: ' + draftFile.name : 'PDF, Word, Excel, PowerPoint or HTML — up to 50 MB'"></p>
                                 <p class="text-xs font-medium text-slate-500" x-show="draftFile" x-text="draftFile ? formatBytes(draftFile.size) + ' · ' + kindLabel({fileName: draftFile.name}) : ''"></p>
                             </div>
@@ -1789,13 +1819,91 @@
                         </div>
                     </section>
 
+                    <!-- Live upload progress: every stage is named, and the
+                         elapsed time keeps a slow connection from looking like
+                         a frozen page. -->
+                    <section x-show="submitting" x-cloak class="bg-white rounded-xl shadow-sm border border-indigo-200 p-5"
+                             aria-labelledby="upload-progress-heading">
+                        <div class="flex items-center justify-between gap-3">
+                            <h3 id="upload-progress-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                <svg class="animate-spin h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                <span x-text="uploadProgressLabel"></span>
+                            </h3>
+                            <span class="text-xs font-medium text-slate-500" x-text="uploadElapsedSeconds + 's elapsed'"></span>
+                        </div>
+                        <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100" role="progressbar"
+                             aria-valuemin="0" aria-valuemax="100" :aria-valuenow="uploadPercent" aria-label="Upload progress">
+                            <div class="h-2 rounded-full bg-indigo-600 transition-all" :style="`width: ${uploadPercent}%`"></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500" x-text="uploadDetail"></p>
+                        <p x-show="uploadSlow" x-cloak class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800" role="status">
+                            Still working. A large file over a slow school connection can take a minute — please keep this tab open
+                            and do not press Publish again. The page will not close on its own while the upload is running.
+                        </p>
+                    </section>
+
+                    <!-- Safety and accuracy report for the chosen file -->
+                    <section x-show="uploadChecks.length > 0" x-cloak class="bg-white rounded-xl shadow-sm border border-slate-200 p-5"
+                             aria-labelledby="upload-safety-heading">
+                        <h3 id="upload-safety-heading" class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                            <i data-lucide="shield-check" class="w-4 h-4" aria-hidden="true"></i>
+                            Safety &amp; accuracy check
+                        </h3>
+                        <ul class="space-y-2">
+                            <template x-for="check in uploadChecks" :key="check.id">
+                                <li class="flex items-start gap-2 text-sm">
+                                    <i :data-lucide="check.status === 'ok' ? 'check-circle-2' : (check.status === 'warn' ? 'alert-triangle' : 'x-circle')"
+                                       class="mt-0.5 h-4 w-4 shrink-0"
+                                       :class="check.status === 'ok' ? 'text-emerald-600' : (check.status === 'warn' ? 'text-amber-600' : 'text-red-600')"
+                                       aria-hidden="true"></i>
+                                    <span>
+                                        <span class="font-medium text-slate-800" x-text="check.label"></span>
+                                        <span class="text-slate-500" x-text="' — ' + check.detail"></span>
+                                    </span>
+                                </li>
+                            </template>
+                        </ul>
+                        <p x-show="uploadWarnings.length > 0" x-cloak class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                            The scan found behaviour this website's security policy will not run in the browser (remote scripts, external
+                            frames, embedded objects or browser storage). Publish anyway only if you trust the file and understand that part
+                            of it may not work for students.
+                        </p>
+                        <label x-show="uploadWarnings.length > 0" x-cloak class="mt-3 flex items-start gap-2 text-xs font-medium text-slate-700">
+                            <input type="checkbox" x-model="uploadAcknowledgedWarnings"
+                                   class="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                            <span>I have read the findings above and want to publish this file anyway.</span>
+                        </label>
+                        <label class="mt-3 flex items-start gap-2 text-xs font-medium text-slate-700">
+                            <input type="checkbox" x-model="uploadVerify"
+                                   class="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                            <span>Verify after publishing (the published file is re-read from GitHub and compared with this device's copy; leave on for the strongest guarantee).</span>
+                        </label>
+                    </section>
+
+                    <!-- Receipt for the last verified upload -->
+                    <section x-show="uploadResult" x-cloak class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" role="status">
+                        <p class="flex items-center gap-2 font-bold"><i data-lucide="shield-check" class="h-4 w-4" aria-hidden="true"></i> Verification receipt</p>
+                        <p class="mt-1" x-text="'File: ' + (uploadResult?.name || '') + (uploadResult?.bytes ? ' · ' + formatBytes(uploadResult.bytes) : '')"></p>
+                        <p class="mt-1 break-all" x-text="uploadResult?.sha256 ? 'SHA-256: ' + uploadResult.sha256 : (uploadResult?.verificationMessage || 'No fingerprint was recorded.')"></p>
+                        <p class="mt-1 text-xs" x-show="uploadResult?.verified">The published bytes matched this device, and the library metadata entry was confirmed in library.json.</p>
+                        <p class="mt-1 text-xs" x-show="uploadResult?.recovered">The first attempt was interrupted; the retry confirmed GitHub had already stored the file, so it was not uploaded twice.</p>
+                    </section>
+
+                    <p x-show="blockedSeconds('upload') > 0" x-cloak class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status">
+                        Repeated upload attempts are paused for safety. Available again in
+                        <span class="font-bold" x-text="blockedSeconds('upload') + 's'"></span>.
+                    </p>
                     <p x-show="uploadMessage" x-text="uploadMessage" role="status"
                        class="rounded-lg border px-4 py-3 text-sm"
                        :class="uploadMessageTone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-slate-200 bg-slate-50 text-slate-700'"></p>
-                    <button type="submit" :disabled="submitting"
+                    <button type="submit" :disabled="submitting || uploadNeedsAcknowledgement || blockedSeconds('upload') > 0"
+                            :title="uploadNeedsAcknowledgement ? 'Acknowledge the safety findings above before publishing' : (blockedSeconds('upload') > 0 ? 'Repeated upload attempts are temporarily paused' : 'Publish this resource')"
                             class="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-lg shadow-indigo-100 focus-ring">
                         <span x-show="!submitting" class="flex items-center gap-2">
-                            <i data-lucide="cloud-upload" class="w-5 h-5" aria-hidden="true"></i> Publish to GitHub &amp; Website
+                            <i data-lucide="cloud-upload" class="w-5 h-5" aria-hidden="true"></i>
+                            <span x-show="blockedSeconds('upload') === 0 && !uploadNeedsAcknowledgement">Publish to GitHub &amp; Website</span>
+                            <span x-show="blockedSeconds('upload') > 0" x-cloak x-text="blockedButtonLabel('upload', 'Publishing is paused')"></span>
+                            <span x-show="uploadNeedsAcknowledgement && blockedSeconds('upload') === 0" x-cloak>Acknowledge the findings to publish</span>
                         </span>
                         <span x-show="submitting" class="flex items-center gap-2">
                             <svg class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -2243,10 +2351,14 @@
                                class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
                     </div>
                     <p x-show="loginError" x-text="loginError" class="text-sm text-red-600" role="alert"></p>
+                    <p x-show="blockedSeconds('login') > 0" x-cloak class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800" role="status">
+                        Repeated sign-in attempts are paused for safety. You can try again in
+                        <span class="font-bold" x-text="blockedSeconds('login') + 's'"></span>.
+                    </p>
                     <div class="flex gap-2 pt-1">
                         <button type="button" @click="showLogin = false" class="flex-1 border border-slate-300 text-slate-700 py-2 rounded-lg font-medium hover:bg-slate-50 focus-ring">Cancel</button>
-                        <button type="submit" :disabled="checkingLogin" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold disabled:opacity-50 focus-ring">
-                            <span x-text="checkingLogin ? 'Checking…' : 'Sign In'"></span>
+                        <button type="submit" :disabled="checkingLogin || blockedSeconds('login') > 0" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold disabled:opacity-50 focus-ring">
+                            <span x-text="checkingLogin ? 'Checking…' : blockedButtonLabel('login', 'Sign In')"></span>
                         </button>
                     </div>
                 </form>

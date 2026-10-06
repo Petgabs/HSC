@@ -141,6 +141,36 @@ describe('School Cloud release configuration', () => {
     expect(worker).toContain('/stats/downloads.json');
   });
 
+  it('ships the admin-online indicator, click protection and verified uploads', async () => {
+    const [html, app, worker, guard, presence, safety] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../sw.js'),
+      read('../assets/js/lib/guard.js'), read('../assets/js/lib/presence.js'), read('../assets/js/lib/uploadSafety.js')
+    ]);
+    // Live presence: a bucket heartbeat, never an identity.
+    expect(html).toContain('presencePillClass');
+    expect(presence).toContain('Admin status unknown');
+    expect(app).toContain('initPresence()');
+    expect(app).toContain('startAdminPresenceHeartbeat()');
+    expect(presence).toContain("PRESENCE_BUCKET_PREFIX = 'admin-online'");
+    // Repeated clicks and rate limits.
+    expect(guard).toContain('ADMIN_ACTION_LIMITS');
+    expect(guard).toContain('RATE_LIMIT_STORAGE_KEY');
+    expect(html).toContain('blockedButtonLabel(');
+    expect(app).toContain("guardAction('upload')");
+    expect(app).toContain("guardAction('login')");
+    // Upload safety and accuracy.
+    expect(html).toContain('Safety &amp; accuracy check');
+    expect(html).toContain('Acknowledge the findings to publish');
+    expect(app).toContain('inspectUpload');
+    expect(app).toContain('verifyPublishedFile');
+    expect(safety).toContain('vbaProject');
+    expect(safety).toContain('sha256');
+    // Both new modules are precached for offline use.
+    expect(worker).toContain("'./assets/js/lib/presence.js'");
+    expect(worker).toContain("'./assets/js/lib/guard.js'");
+    expect(worker).toContain("'./assets/js/lib/uploadSafety.js'");
+  });
+
   it('wires automatic GitHub counter snapshots, the admin sync, and one release version', async () => {
     const [html, app, pkg, worker, workflow, syncScript] = await Promise.all([
       read('../index.html'), read('../assets/js/app.js'), read('../package.json'), read('../sw.js'),

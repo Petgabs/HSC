@@ -51,6 +51,10 @@ export function inferMetadata(filename, curated = {}) {
     reviewDate: String(curated.reviewDate || ''),
     licence: String(curated.licence || ''),
     accessibility: String(curated.accessibility || ''),
+    // Integrity fields recorded at upload time. Older entries simply have
+    // none, which the dashboard reports rather than inventing a value.
+    sha256: String(curated.sha256 || '').trim().toLowerCase(),
+    bytes: Number.isSafeInteger(Number(curated.bytes)) && Number(curated.bytes) >= 0 ? Number(curated.bytes) : 0,
     addedAt: String(curated.addedAt || '')
   };
 }
