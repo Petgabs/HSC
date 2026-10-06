@@ -1,7 +1,14 @@
 import Alpine from '../vendor/alpine.esm.js';
-import { SITE_CONFIG, SUBJECTS, YEAR_LEVELS } from './config.js';
+import {
+  SITE_CONFIG, SUBJECTS, YEAR_LEVELS,
+  applyAdminGate, applyMasterGate, gateSignature, readAdminGate, readMasterGate
+} from './config.js';
 import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from './lib/counters.js';
-import { deleteResourceFromGitHub, readPublicRepositoryFiles, removeDownloadStatsForPath, saveDownloadStatsToGitHub, savePublishingTokenToGitHub, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
+import {
+  deleteResourceFromGitHub, readPublicRepositoryFiles, removeDownloadStatsForPath,
+  saveAdminCredentialsToGitHub, saveDownloadStatsToGitHub, savePublishingTokenToGitHub,
+  uploadResourceToGitHub, verifyGitHubToken
+} from './lib/githubPublish.js';
 import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
 import { searchResources, sortResources } from './lib/search.js';
 import {
@@ -21,8 +28,15 @@ const ADMIN_LOGIN_SESSION_KEY = 'schoolcloud.admin.signed-in.v1';
 // dashboard never asks for it twice. It survives sign-out, reloads and new
 // tabs; "Forget token on this device" (or Clear local settings) removes it.
 const SAVED_TOKEN_STORAGE_KEY = 'schoolcloud.github.token.v1';
+// A credential rotated in Cloud Settings is committed to assets/js/config.js
+// on GitHub. Until GitHub Pages deploys that commit, this device remembers the
+// new credential so the change is usable straight away; the copy is dropped as
+// soon as the deployed config file changes.
+const SAVED_ADMIN_CREDENTIALS_KEY = 'schoolcloud.admin.credentials.v1';
 const VALID_YEAR_LEVELS = new Set(YEAR_LEVELS.map(String));
 const MAX_DESCRIPTION_LENGTH = 3000;
+const MIN_PASSWORD_LENGTH = 8;
+const USERNAME_PATTERN = /^[A-Za-z0-9._@+-]{3,64}$/;
 
 function parseRepoName(value, fallbackOwner, fallbackName) {
   const match = String(value || '').trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
@@ -107,6 +121,37 @@ async function verifyConfiguredAdmin(username, password) {
   const candidate = await sha256Hex(`${configured.salt}:${password}`);
   const expected = String(configured.passwordHash).trim().toLowerCase();
   return { ok: usernameMatches && candidate === expected, configurationMissing: false };
+}
+
+/**
+ * Check the master password that opens the Administrator account section of
+ * Cloud Settings. Same scheme as the sign-in gate: a salt plus the SHA-256
+ * digest of `<salt>:<password>`, never the plain password.
+ */
+async function verifyConfiguredMaster(password) {
+  const configured = readMasterGate();
+  if (!configured?.salt || !configured?.passwordHash) {
+    return { ok: false, configurationMissing: true };
+  }
+  const candidate = await sha256Hex(`${configured.salt}:${password}`);
+  const expected = String(configured.passwordHash).trim().toLowerCase();
+  return { ok: candidate === expected, configurationMissing: false };
+}
+
+/** Fresh 32-character hex salt for a rotated password. */
+function randomSaltHex() {
+  if (!globalThis.crypto?.getRandomValues) throw new Error('This browser cannot generate a secure password salt.');
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return digestHex(bytes);
+}
+
+function hashPasswordWithSalt(salt, password) {
+  return sha256Hex(`${salt}:${password}`);
+}
+
+function emptyAdminAccountForm() {
+  return { username: '', password: '', confirmPassword: '', masterPassword: '', confirmMasterPassword: '' };
 }
 
 function clipboardWrite(text) {
@@ -275,9 +320,17 @@ function schoolCloud() {
     _initialized: false,
     _dismissedIntegrityIssueIds: [],
     localDrafts: [],
-    submissionRecords: [],
-    cloudQueue: { available: false, loading: false, loadedAt: null, error: '' },
-    publishingSubmissionId: '',
+    adminAccount: {
+      unlocked: false,
+      checking: false,
+      saving: false,
+      showMasterPassword: false,
+      masterPassword: '',
+      error: '',
+      notice: '',
+      noticeUrl: '',
+      form: emptyAdminAccountForm()
+    },
     integrityUi: {
       running: false,
       repairing: false,
@@ -296,9 +349,7 @@ function schoolCloud() {
     get resources() { return this.apps.filter(item => !['html', 'htm'].includes(fileExtension(item).toLowerCase())); },
     get localAppCount() { return this.localDrafts.length; },
     get cloudAppCount() { return this.apps.length; },
-    get pendingSubmissions() { return this.submissionRecords.filter(record => record.status === 'pending'); },
-    get reviewedSubmissions() { return this.submissionRecords.filter(record => record.status !== 'pending'); },
-    get submissionCounts() { return { pending: this.pendingSubmissions.length }; },
+    get recentUploadCount() { return this.apps.filter(item => calculateAgeDays(item?.addedAt || item?.meta?.addedAt) <= 30).length; },
     get autoPublishReady() { return this.githubAuth.connected && Boolean(this.githubAuth.activeToken); },
     get repositoryTarget() {
       return parseRepoName(this.githubConfig.repo, SITE_CONFIG.repository.owner, SITE_CONFIG.repository.name);
@@ -530,6 +581,8 @@ function schoolCloud() {
       this._initialized = true;
       this.clearLegacyTokens();
       this.loadSavedRepoSettings();
+      // Apply a credential this device rotated before the deployment landed.
+      this.restoreAdminCredentials();
       this.isAdmin = false;
       this.githubAuth.token = '';
       this.githubAuth.activeToken = '';
@@ -1005,18 +1058,25 @@ function schoolCloud() {
       this.currentView = 'upload';
       this.refreshIcons();
     },
-    openSubmissions() {
-      if (!this.isAdmin) return this.openLogin('admin');
-      this.refreshCloudQueue();
-      this.currentView = 'submissions';
-    },
     openAdminWorkspace(destination) {
       if (!this.isAdmin) return;
       if (destination === 'upload') return this.openUpload();
-      if (destination === 'submissions') return this.openSubmissions();
+      if (destination === 'account') return this.openAdminAccountSettings();
       if (destination === 'settings') return this.currentView = 'settings';
       if (destination === 'library') return this.currentView = 'library';
       this.currentView = destination || 'dashboard';
+    },
+    /**
+     * Open Cloud Settings and scroll to the Administrator account section.
+     * The section stays locked until the master password is entered.
+     */
+    openAdminAccountSettings() {
+      this.currentView = 'settings';
+      this.refreshIcons();
+      this.$nextTick(() => {
+        document.getElementById('admin-account-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('master-password')?.focus({ preventScroll: true });
+      });
     },
     openLogin() {
       this.loginMode = 'admin';
@@ -1065,6 +1125,7 @@ function schoolCloud() {
       this.githubAuth.cloudSecretAlreadySaved = false;
       this.githubAuth.error = '';
       this.loginForm.password = '';
+      this.lockAdminAccount();
       safeStorageRemove(globalThis.sessionStorage, ADMIN_LOGIN_SESSION_KEY);
       // Signing out ends this session but keeps the remembered token saved on
       // this device, so the next sign-in reconnects without pasting it again.
@@ -1535,32 +1596,182 @@ function schoolCloud() {
       document.getElementById('library-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
 
-    async refreshCloudQueue() {
-      this.cloudQueue.loading = true;
-      this.cloudQueue.error = '';
-      this.submissionRecords = [];
-      this.cloudQueue.available = false;
-      this.cloudQueue.loadedAt = new Date().toISOString();
-      this.cloudQueue.loading = false;
-      this.notify('Teacher sign-in and new teacher submissions have been removed. Admin uploads publish directly from the Upload Resource page.', 'info');
+    /**
+     * Administrator account section (Cloud Settings).
+     *
+     * The section is locked behind a master password. Rotating a credential
+     * writes a fresh salt and SHA-256 digest into assets/js/config.js on
+     * GitHub, so the change is real for every visitor once GitHub Pages
+     * deploys it; this device also remembers it so it works immediately.
+     */
+    async unlockAdminAccount() {
+      if (this.adminAccount.checking) return;
+      this.adminAccount.error = '';
+      if (!this.isAdmin) {
+        this.adminAccount.error = 'You are not signed in as the administrator.';
+        return;
+      }
+      const password = String(this.adminAccount.masterPassword || '');
+      if (!password) {
+        this.adminAccount.error = 'Enter the master password to open this section.';
+        return;
+      }
+      this.adminAccount.checking = true;
+      try {
+        const result = await verifyConfiguredMaster(password);
+        if (result.configurationMissing) {
+          this.adminAccount.error = 'No master password is configured on this deployment. Set the master salt and digest in assets/js/config.js.';
+          return;
+        }
+        if (!result.ok) {
+          this.adminAccount.error = 'The master password is incorrect.';
+          this.adminAccount.masterPassword = '';
+          this.$nextTick(() => document.getElementById('master-password')?.focus());
+          return;
+        }
+        this.adminAccount.masterPassword = '';
+        this.adminAccount.unlocked = true;
+        this.adminAccount.error = '';
+        this.adminAccount.notice = '';
+        this.adminAccount.noticeUrl = '';
+        this.adminAccount.form = { ...emptyAdminAccountForm(), username: readAdminGate().username };
+        this.refreshIcons();
+        this.$nextTick(() => document.getElementById('admin-username')?.focus({ preventScroll: true }));
+      } catch (error) {
+        this.adminAccount.error = error?.message || 'The master password could not be checked.';
+      } finally {
+        this.adminAccount.checking = false;
+        this.refreshIcons();
+      }
     },
-    openSubmissionPreview(record) {
-      const item = this.apps.find(entry => entry.path === record?.path || entry.fileName === record?.fileName);
-      if (item) this.openPreview(item);
+    lockAdminAccount({ announce = false } = {}) {
+      this.adminAccount.unlocked = false;
+      this.adminAccount.checking = false;
+      this.adminAccount.masterPassword = '';
+      this.adminAccount.showMasterPassword = false;
+      this.adminAccount.error = '';
+      this.adminAccount.notice = '';
+      this.adminAccount.noticeUrl = '';
+      this.adminAccount.form = emptyAdminAccountForm();
+      this.refreshIcons();
+      if (announce) this.notify('The Administrator account section was locked again.', 'success');
     },
-    downloadSubmission(record) {
-      const item = this.apps.find(entry => entry.path === record?.path || entry.fileName === record?.fileName);
-      if (item) this.downloadApp(item);
+    toggleMasterPasswordVisibility() {
+      this.adminAccount.showMasterPassword = !this.adminAccount.showMasterPassword;
+      this.refreshIcons();
     },
-    approveSubmission() { this.notify('New teacher submissions are no longer accepted. Use Upload Resource to publish directly.', 'info'); },
-    declineSubmission() { this.notify('Teacher submissions are no longer accepted.', 'info'); },
-    viewInLibrary(record) { this.openResourceInLibrary(record); },
-    publishSubmissionToGithub() { this.notify('Use the direct admin upload page to publish files to GitHub.', 'info'); },
-    copySubmissionMetadata(record) { clipboardWrite(JSON.stringify(record || {}, null, 2)).then(() => this.notify('Metadata copied.', 'success')).catch(() => this.notify('Could not copy metadata.', 'error')); },
-    markPublished() { this.notify('Legacy submission records are read-only. Publish resources directly from Upload Resource.', 'info'); },
-    deleteSubmission() { this.notify('Legacy submission records are not changed by this version.', 'info'); },
-    submissionStatusLabel(status) { return status === 'approved' ? 'Approved' : status === 'rejected' ? 'Declined' : 'Pending'; },
-    submissionStatusAccent(status) { return status === 'approved' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : status === 'rejected' ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'; },
+    async saveAdminAccount() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      if (!this.adminAccount.unlocked || this.adminAccount.saving) return;
+      const state = this.adminAccount;
+      const form = state.form;
+      state.error = '';
+      state.notice = '';
+      state.noticeUrl = '';
+
+      const username = String(form.username || '').trim();
+      if (!USERNAME_PATTERN.test(username)) {
+        state.error = 'Use 3–64 characters for the username: letters, numbers and . _ @ + -';
+        return;
+      }
+      const wantsNewPassword = Boolean(form.password || form.confirmPassword);
+      if (wantsNewPassword && String(form.password).length < MIN_PASSWORD_LENGTH) {
+        state.error = `The administrator password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+        return;
+      }
+      if (wantsNewPassword && form.password !== form.confirmPassword) {
+        state.error = 'The two administrator password entries do not match.';
+        return;
+      }
+      const wantsNewMaster = Boolean(form.masterPassword || form.confirmMasterPassword);
+      if (wantsNewMaster && String(form.masterPassword).length < MIN_PASSWORD_LENGTH) {
+        state.error = `The master password must be at least ${MIN_PASSWORD_LENGTH} characters.`;
+        return;
+      }
+      if (wantsNewMaster && form.masterPassword !== form.confirmMasterPassword) {
+        state.error = 'The two master password entries do not match.';
+        return;
+      }
+      const currentAdmin = readAdminGate();
+      if (username === currentAdmin.username && !wantsNewPassword && !wantsNewMaster) {
+        state.error = 'Nothing to change: the username is the same and no new password was entered.';
+        return;
+      }
+
+      const token = String(this.githubAuth.activeToken || '').trim();
+      if (!this.githubAuth.connected || !token) {
+        state.error = 'Connect a GitHub token in the section above first. The new credentials are committed to assets/js/config.js so they apply to every device.';
+        return;
+      }
+
+      // Hash before anything is sent: only the salt and the digest ever leave
+      // this browser, never the typed passwords.
+      const admin = { username, salt: currentAdmin.salt, passwordHash: currentAdmin.passwordHash };
+      if (wantsNewPassword) {
+        admin.salt = randomSaltHex();
+        admin.passwordHash = await hashPasswordWithSalt(admin.salt, form.password);
+      }
+      let master = null;
+      if (wantsNewMaster) {
+        const salt = randomSaltHex();
+        master = { salt, passwordHash: await hashPasswordWithSalt(salt, form.masterPassword) };
+      }
+
+      const signatureBefore = gateSignature();
+      state.saving = true;
+      try {
+        const target = this.repositoryTarget;
+        const result = await saveAdminCredentialsToGitHub({
+          owner: target.owner,
+          repo: target.name,
+          branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
+          token,
+          admin,
+          master
+        });
+        if (!result.changed) {
+          state.error = 'The repository already holds these credentials. Nothing was changed.';
+          return;
+        }
+        // Use the new credential here immediately, and remember it until the
+        // GitHub Pages deployment of config.js replaces it.
+        this.rememberAdminCredentials({ replaces: signatureBefore, admin, master });
+        applyAdminGate(admin);
+        if (master) applyMasterGate(master);
+        try { sessionStorage.setItem(ADMIN_LOGIN_SESSION_KEY, username); } catch { /* Current tab stays signed in. */ }
+        state.notice = (wantsNewMaster ? 'The administrator sign-in and the master password were updated' : 'The administrator sign-in was updated')
+          + ' and committed to assets/js/config.js. It is already active here and reaches every other device once GitHub Pages finishes deploying (usually within a minute).';
+        state.noticeUrl = result.commitUrl || '';
+        state.form = { ...emptyAdminAccountForm(), username };
+        this.notify(wantsNewMaster ? 'Administrator sign-in and master password updated.' : 'Administrator sign-in updated.', 'success');
+      } catch (error) {
+        state.error = error?.message || 'The administrator credentials could not be updated.';
+        this.notify(state.error, 'error');
+      } finally {
+        state.saving = false;
+        this.refreshIcons();
+      }
+    },
+    rememberAdminCredentials(record) {
+      const payload = { ...record, savedAt: new Date().toISOString() };
+      safeStorageSet(globalThis.localStorage, SAVED_ADMIN_CREDENTIALS_KEY, JSON.stringify(payload));
+    },
+    /**
+     * Re-apply a credential this device rotated while the GitHub Pages
+     * deployment was still pending. The moment the deployed config.js changes,
+     * it becomes the source of truth again and this copy is discarded.
+     */
+    restoreAdminCredentials() {
+      const raw = safeStorageGet(globalThis.localStorage, SAVED_ADMIN_CREDENTIALS_KEY);
+      if (!raw) return;
+      const drop = () => safeStorageRemove(globalThis.localStorage, SAVED_ADMIN_CREDENTIALS_KEY);
+      let record = null;
+      try { record = JSON.parse(raw); } catch { drop(); return; }
+      if (!record?.admin?.passwordHash || !record.replaces) { drop(); return; }
+      if (record.replaces !== gateSignature()) { drop(); return; }
+      applyAdminGate(record.admin);
+      if (record.master?.passwordHash) applyMasterGate(record.master);
+    },
 
     updateIntegrityReport() {
       const issues = [];
@@ -1574,7 +1785,6 @@ function schoolCloud() {
         counts: {
           publishedFiles: this.apps.length,
           metadataEntries: this.metadataEntries,
-          queueEntries: this.submissionRecords.length,
           errors: issues.filter(issue => issue.severity === 'error').length,
           warnings: issues.filter(issue => issue.severity === 'warning').length
         }

@@ -14,7 +14,7 @@
  *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.10.0';
+const VERSION = 'v1.11.0';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -83,14 +83,6 @@ function isLibraryData(url) {
 
 function isDownloadableFile(url) {
   return /\/apps\/.+\.(?:html?|pdf|docx?|xlsx?|pptx?)$/i.test(url.pathname);
-}
-
-function isNeverCache(url) {
-  // Retain network-only behavior for legacy review data if an older repository
-  // still contains it. Plaintext access tokens are never read from or written to
-  // repository files; GitHub Actions secret traffic is also network-only.
-  return url.pathname.endsWith('/submissions/queue.json') ||
-    url.pathname.includes('/submissions/pending/');
 }
 
 /** Remove cache-busting query strings from data cache keys. */
@@ -182,10 +174,10 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(request.url);
 
-  // Never cache credentials, counters, review data or GitHub API traffic.
-  if (url.hostname.includes('abacus') ||
-      url.hostname === 'api.github.com' ||
-      isNeverCache(url)) return;
+  // Never cache counters or GitHub API traffic. Plaintext access tokens are
+  // never read from or written to repository files, and GitHub Actions secret
+  // traffic is network-only as well.
+  if (url.hostname.includes('abacus') || url.hostname === 'api.github.com') return;
 
   // Cross-origin requests (including the Office viewer) go straight to the
   // network. The service worker can only safely manage first-party assets.

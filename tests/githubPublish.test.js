@@ -1,7 +1,9 @@
+import { readFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import {
-  encodeBase64Bytes, PUBLISH_TOKEN_SECRET_NAME, removeDownloadStatsForPath, sanitizeUploadName,
+  ADMIN_CONFIG_PATH, encodeBase64Bytes, PUBLISH_TOKEN_SECRET_NAME, removeDownloadStatsForPath,
+  replaceConfigCredentials, sanitizeUploadName, saveAdminCredentialsToGitHub,
   saveDownloadStatsToGitHub, savePublishingTokenToGitHub,
   uploadResourceToGitHub, verifyGitHubToken
 } from '../assets/js/lib/githubPublish.js';
@@ -323,5 +325,97 @@ describe('download-count record cleanup on delete', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(removeDownloadStatsForPath({ owner: 'Petgabs', repo: 'HSC', token: 't', path: 'apps/Gone.pdf' }))
       .rejects.toThrow('not valid JSON');
+  });
+});
+
+describe('administrator credential rotation', () => {
+  const readConfig = () => readFile(new URL('../assets/js/config.js', import.meta.url), 'utf8');
+
+  it('rewrites only the shipped salt and digest, and never a plain password', async () => {
+    const source = await readConfig();
+    const salt = 'a'.repeat(32);
+    const passwordHash = 'b'.repeat(64);
+    const masterSalt = 'c'.repeat(32);
+    const masterHash = 'd'.repeat(64);
+
+    const next = replaceConfigCredentials(source, {
+      admin: { username: 'new-admin', salt, passwordHash },
+      master: { salt: masterSalt, passwordHash: masterHash }
+    });
+
+    expect(next).toContain(`username: 'new-admin'`);
+    expect(next).toContain(`salt: '${salt}'`);
+    expect(next).toContain(`passwordHash: '${passwordHash}'`);
+    expect(next).toContain(`salt: '${masterSalt}'`);
+    expect(next).toContain(`passwordHash: '${masterHash}'`);
+    // The rest of the shipped file is untouched.
+    expect(next).toContain("owner: 'Petgabs'");
+    expect(next).toContain("namespace: 'petgabs-hsc-schoolcloud'");
+    expect(next.split('\n')).toHaveLength(source.split('\n').length);
+    expect(next).not.toMatch(/\bpassword\s*:\s*'/i);
+  });
+
+  it('leaves the master password alone when only the administrator changes', async () => {
+    const source = await readConfig();
+    const next = replaceConfigCredentials(source, {
+      admin: { username: 'new-admin', salt: 'a'.repeat(32), passwordHash: 'b'.repeat(64) }
+    });
+    expect(next).toContain(`username: 'new-admin'`);
+    expect(next).toContain(`passwordHash: 'e5286ed75095b3ae3e8dd2fbed216e20e2e575cb69b31bd4270b7d544db37986'`);
+  });
+
+  it('refuses malformed credentials instead of writing a broken file', async () => {
+    const source = await readConfig();
+    expect(() => replaceConfigCredentials(source, {
+      admin: { username: 'bad name!', salt: 'a'.repeat(32), passwordHash: 'b'.repeat(64) }
+    })).toThrow('administrator username');
+    expect(() => replaceConfigCredentials(source, {
+      admin: { username: 'new-admin', salt: 'not-hex', passwordHash: 'b'.repeat(64) }
+    })).toThrow('administrator salt');
+    expect(() => replaceConfigCredentials(source, {
+      master: { salt: 'c'.repeat(32), passwordHash: 'plain-text-password' }
+    })).toThrow('master-password digest');
+  });
+
+  it('commits the rotated credential to assets/js/config.js with the current file sha', async () => {
+    const source = await readConfig();
+    const passwordHash = 'b'.repeat(64);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'config-sha', content: encodeBase64Bytes(new TextEncoder().encode(source)) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/abc123' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await saveAdminCredentialsToGitHub({
+      owner: 'Petgabs', repo: 'HSC', token: 'rotating-token',
+      admin: { username: 'new-admin', salt: 'a'.repeat(32), passwordHash },
+      master: { salt: 'c'.repeat(32), passwordHash: 'd'.repeat(64) }
+    });
+
+    expect(result).toMatchObject({
+      path: ADMIN_CONFIG_PATH, changed: true, commitUrl: 'https://github.com/Petgabs/HSC/commit/abc123'
+    });
+    expect(fetchMock.mock.calls[0][0]).toContain('contents/assets/js/config.js');
+    const [url, options] = fetchMock.mock.calls[1];
+    expect(url).toContain('contents/assets/js/config.js');
+    expect(options.method).toBe('PUT');
+    expect(options.headers.Authorization).toBe('Bearer rotating-token');
+    const body = JSON.parse(options.body);
+    expect(body.sha).toBe('config-sha');
+    const written = new TextDecoder().decode(Uint8Array.from(atob(body.content), character => character.charCodeAt(0)));
+    expect(written).toContain(`passwordHash: '${passwordHash}'`);
+    expect(written).toContain(`username: 'new-admin'`);
+    expect(JSON.stringify(body)).not.toContain('hsc@bzfls');
+  });
+
+  it('requires a token and stops when the shipped config file cannot be found', async () => {
+    await expect(saveAdminCredentialsToGitHub({ owner: 'Petgabs', repo: 'HSC', admin: {} }))
+      .rejects.toThrow('Connect a GitHub token');
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(404, { message: 'Not Found' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(saveAdminCredentialsToGitHub({
+      owner: 'Petgabs', repo: 'HSC', token: 't',
+      admin: { username: 'new-admin', salt: 'a'.repeat(32), passwordHash: 'b'.repeat(64) }
+    })).rejects.toThrow('was not found in the repository');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
