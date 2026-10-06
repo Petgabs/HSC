@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import {
-  encodeBase64Bytes, PUBLISH_TOKEN_SECRET_NAME, sanitizeUploadName,
+  encodeBase64Bytes, PUBLISH_TOKEN_SECRET_NAME, removeDownloadStatsForPath, sanitizeUploadName,
   saveDownloadStatsToGitHub, savePublishingTokenToGitHub,
   uploadResourceToGitHub, verifyGitHubToken
 } from '../assets/js/lib/githubPublish.js';
@@ -231,6 +231,97 @@ describe('download-count record sync', () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { sha: 'x', content: btoa('not json{{{') }));
     vi.stubGlobal('fetch', fetchMock);
     await expect(saveDownloadStatsToGitHub({ owner: 'Petgabs', repo: 'HSC', token: 't', stats: { files: {} } }))
+      .rejects.toThrow('not valid JSON');
+  });
+});
+
+describe('download-count record cleanup on delete', () => {
+  function decodeJsonCall(call) {
+    const request = call[1];
+    const body = JSON.parse(request.body);
+    const decoded = new TextDecoder().decode(Uint8Array.from(atob(body.content), char => char.charCodeAt(0)));
+    return { request, body, record: JSON.parse(decoded) };
+  }
+
+  it('removes one file entry while preserving every other total', async () => {
+    const existing = {
+      _comment: ['keep this comment'],
+      namespace: 'petgabs-hsc-schoolcloud',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      visitors: 50,
+      files: {
+        'apps/Old.pdf': { downloads: 9, key: 'download-aaaaaaaa' },
+        'apps/Gone.pdf': { downloads: 4, key: 'download-bbbbbbbb' }
+      }
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'stats-sha', content: base64Json(existing) }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'stats-sha', content: base64Json(existing) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/prune' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await removeDownloadStatsForPath({
+      owner: 'Petgabs', repo: 'HSC', branch: 'main', token: 'secret-token', path: 'apps/Gone.pdf'
+    });
+
+    expect(result).toMatchObject({ path: 'stats/downloads.json', removed: true, missing: false });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const { request, body, record } = decodeJsonCall(fetchMock.mock.calls[2]);
+    expect(request.method).toBe('PUT');
+    expect(request.headers.Authorization).toBe('Bearer secret-token');
+    expect(body.sha).toBe('stats-sha');
+    expect(body.message).toContain('Gone.pdf');
+    expect(body).not.toHaveProperty('token');
+    expect(record._comment).toEqual(['keep this comment']);
+    expect(record.namespace).toBe('petgabs-hsc-schoolcloud');
+    expect(record.visitors).toBe(50);
+    expect(record.updatedAt).not.toBe('2026-10-01T00:00:00.000Z');
+    expect(record.files['apps/Old.pdf']).toMatchObject({ downloads: 9, key: 'download-aaaaaaaa' });
+    expect(record.files).not.toHaveProperty('apps/Gone.pdf');
+  });
+
+  it('matches the deleted path case-insensitively', async () => {
+    const existing = {
+      namespace: 'petgabs-hsc-schoolcloud',
+      visitors: 1,
+      files: { 'apps/Mixed Case.PDF': { downloads: 2, key: 'download-cccccccc' } }
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'stats-sha', content: base64Json(existing) }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'stats-sha', content: base64Json(existing) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: {} }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await removeDownloadStatsForPath({
+      owner: 'Petgabs', repo: 'HSC', token: 'secret-token', path: 'apps/mixed case.pdf'
+    });
+
+    expect(result.removed).toBe(true);
+    const { record } = decodeJsonCall(fetchMock.mock.calls[2]);
+    expect(record.files).not.toHaveProperty('apps/Mixed Case.PDF');
+  });
+
+  it('is a no-op when the stats record does not exist yet', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(404, { message: 'Not Found' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await removeDownloadStatsForPath({
+      owner: 'Petgabs', repo: 'HSC', token: 'secret-token', path: 'apps/Gone.pdf'
+    });
+
+    expect(result).toMatchObject({ removed: false, missing: true, commitUrl: '' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBeUndefined();
+  });
+
+  it('requires a token, an apps/ path and valid existing JSON', async () => {
+    await expect(removeDownloadStatsForPath({ owner: 'Petgabs', repo: 'HSC', path: 'apps/Gone.pdf' }))
+      .rejects.toThrow('Connect a GitHub token');
+    await expect(removeDownloadStatsForPath({ owner: 'Petgabs', repo: 'HSC', token: 't', path: '../escape.pdf' }))
+      .rejects.toThrow('outside apps/');
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { sha: 'x', content: btoa('not json{{{') }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(removeDownloadStatsForPath({ owner: 'Petgabs', repo: 'HSC', token: 't', path: 'apps/Gone.pdf' }))
       .rejects.toThrow('not valid JSON');
   });
 });

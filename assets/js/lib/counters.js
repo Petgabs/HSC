@@ -85,7 +85,13 @@ export class AbacusCounters {
     if (typeof fetchImpl !== 'function') throw new TypeError('Fetch is unavailable.');
     this.baseUrl = String(baseUrl).replace(/\/+$/, '');
     this.namespace = namespace;
-    this.fetch = fetchImpl;
+    // Never store the raw fetch reference as a method: calling `this.fetch()`
+    // detaches browser fetch from its Window/Worker global and every browser
+    // rejects that with "TypeError: Illegal invocation". Plain mocks do not
+    // care about receivers, which is why unit tests passed while every live
+    // Abacus read and hit failed in real browsers. The arrow wrapper always
+    // invokes the implementation as a bare call, which works everywhere.
+    this.fetch = (...args) => fetchImpl(...args);
     this.timeoutMs = timeoutMs;
   }
 
