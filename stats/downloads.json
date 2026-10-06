@@ -8,19 +8,19 @@
     "live Abacus values. Entries for removed files are retained."
   ],
   "namespace": "petgabs-hsc-schoolcloud",
-  "updatedAt": "2026-10-06T09:12:20.734Z",
-  "visitors": 5,
+  "updatedAt": "2026-10-06T11:48:40.245Z",
+  "visitors": 11,
   "files": {
     "apps/Sydney Boys 2026 w. sol.pdf": {
       "downloads": 1,
       "key": "download-1649f138"
     },
     "apps/Year_12_Mathematics_Advanced_Topic_MCQ_Practice (1).html": {
-      "downloads": 0,
+      "downloads": 2,
       "key": "download-703c5ed8"
     },
     "apps/Blacktown Boys 2026 w. sol.pdf": {
-      "downloads": 0,
+      "downloads": 1,
       "key": "download-8b85d939"
     }
   }
