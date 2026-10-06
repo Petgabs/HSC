@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.2</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.3</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -2115,7 +2115,7 @@
 
                 <div class="bg-emerald-50 border border-emerald-100 p-4 rounded-lg mb-7 flex gap-3">
                     <i data-lucide="shield-check" class="w-5 h-5 text-emerald-600 flex-shrink-0" aria-hidden="true"></i>
-                    <p class="text-sm text-emerald-800">No GitHub access token is included in this website. Paste a replacement below when you are ready. It is verified with GitHub and kept only in this open tab's memory; signing out or closing the tab clears it.</p>
+                    <p class="text-sm text-emerald-800">Save the token once as the private <code>SCHOOLCLOUD_PUBLISH_TOKEN</code> GitHub Actions repository secret. GitHub encrypts it; the token is never written as plaintext to a repository file or website asset. This static website cannot read GitHub secret values back, so a token used for direct publishing remains in memory in the current tab only.</p>
                 </div>
 
                 <div class="space-y-7">
@@ -2144,7 +2144,7 @@
                                 <h3 id="github-token-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2">
                                     <i data-lucide="key-round" class="w-4 h-4" aria-hidden="true"></i> GitHub upload access
                                 </h3>
-                                <p class="text-xs text-slate-500 mt-1">Use a fine-grained Personal Access Token scoped to this repository with <strong>Contents: Read and write</strong>.</p>
+                                <p class="text-xs text-slate-500 mt-1">Use a fine-grained Personal Access Token scoped to this repository with <strong>Contents: Read and write</strong> and <strong>Secrets: Read and write</strong>.</p>
                             </div>
                             <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1"
                                   :class="githubAuth.connected ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-slate-100 text-slate-500 ring-slate-200'">
@@ -2153,7 +2153,7 @@
                             </span>
                         </div>
                         <div x-show="!githubAuth.connected" class="space-y-3">
-                            <label for="github-token" class="block text-xs font-medium text-slate-600">New Personal Access Token</label>
+                            <label for="github-token" class="block text-xs font-medium text-slate-600">Fine-grained Personal Access Token</label>
                             <div class="relative">
                                 <input id="github-token" :type="githubAuth.showToken ? 'text' : 'password'" x-model="githubAuth.token"
                                        autocomplete="off" spellcheck="false" placeholder="Paste the new token here" aria-describedby="github-token-note"
@@ -2165,20 +2165,31 @@
                                     <i :data-lucide="githubAuth.showToken ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
                                 </button>
                             </div>
-                            <p id="github-token-note" class="text-[11px] text-slate-500">The token is not written to GitHub, local storage, session storage or this repository.</p>
+                            <p id="github-token-note" class="text-[11px] text-slate-500">On save, the token is encrypted with GitHub's repository public key and stored as a private Actions secret. If that secret already exists, it is left unchanged.</p>
                             <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600" role="alert"></p>
                             <button type="button" @click="connectGithub()" :disabled="githubAuth.verifying"
                                     class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 focus-ring">
-                                <i :data-lucide="githubAuth.verifying ? 'loader-2' : 'plug-zap'" class="w-4 h-4" :class="githubAuth.verifying && 'animate-spin'" aria-hidden="true"></i>
-                                <span x-text="githubAuth.verifying ? 'Checking token…' : 'Verify and use in this tab'"></span>
+                                <i :data-lucide="githubAuth.verifying ? 'loader-2' : 'cloud-upload'" class="w-4 h-4" :class="githubAuth.verifying && 'animate-spin'" aria-hidden="true"></i>
+                                <span x-text="githubAuth.verifying ? 'Verifying and saving…' : 'Verify, save once & connect'"></span>
                             </button>
                         </div>
                         <div x-show="githubAuth.connected" x-cloak class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                             <p class="text-sm font-semibold text-emerald-800">
                                 Connected<span x-show="githubAuth.login" x-text="' as ' + githubAuth.login"></span>.
                             </p>
-                            <p class="text-xs text-emerald-700 mt-1">Direct publishing is enabled until you sign out or close this tab.</p>
-                            <button type="button" @click="disconnectGithub()" class="mt-3 inline-flex items-center gap-2 border border-emerald-300 bg-white text-emerald-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-100 focus-ring">
+                            <p class="text-xs text-emerald-700 mt-1">Direct publishing is enabled in this tab until you sign out or close it.</p>
+                            <p x-show="githubAuth.cloudSecretSaved" class="text-xs text-emerald-700 mt-2">
+                                <span x-text="githubAuth.cloudSecretAlreadySaved ? 'The repository Actions secret already existed and was left unchanged.' : 'The token was saved once as the private GitHub Actions repository secret.'"></span>
+                                GitHub does not let this website read the secret back.
+                            </p>
+                            <p x-show="!githubAuth.cloudSecretSaved" class="text-xs text-amber-800 mt-2">The token is connected for this tab, but GitHub did not confirm the cloud secret. Check Secrets: Read and write permission or retry.</p>
+                            <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600 mt-2" role="alert"></p>
+                            <button type="button" x-show="!githubAuth.cloudSecretSaved" @click="saveGithubSecret()" :disabled="githubAuth.verifying"
+                                    class="mt-3 inline-flex items-center gap-2 border border-emerald-300 bg-white text-emerald-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-100 disabled:opacity-50 focus-ring">
+                                <i :data-lucide="githubAuth.verifying ? 'loader-2' : 'cloud-upload'" class="w-4 h-4" :class="githubAuth.verifying && 'animate-spin'" aria-hidden="true"></i>
+                                <span x-text="githubAuth.verifying ? 'Saving securely…' : 'Save once to GitHub Actions'"></span>
+                            </button>
+                            <button type="button" @click="disconnectGithub()" class="mt-3 ml-2 inline-flex items-center gap-2 border border-emerald-300 bg-white text-emerald-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-100 focus-ring">
                                 <i data-lucide="log-out" class="w-4 h-4" aria-hidden="true"></i> Clear token from this tab
                             </button>
                         </div>

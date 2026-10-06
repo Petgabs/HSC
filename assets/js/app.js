@@ -1,7 +1,7 @@
 import Alpine from '../vendor/alpine.esm.js';
 import { SITE_CONFIG, SUBJECTS, YEAR_LEVELS } from './config.js';
 import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from './lib/counters.js';
-import { deleteResourceFromGitHub, readPublicRepositoryFiles, saveDownloadStatsToGitHub, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
+import { deleteResourceFromGitHub, readPublicRepositoryFiles, saveDownloadStatsToGitHub, savePublishingTokenToGitHub, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
 import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
 import { searchResources, sortResources } from './lib/search.js';
 import {
@@ -210,6 +210,8 @@ function schoolCloud() {
       login: '',
       showToken: false,
       verifying: false,
+      cloudSecretSaved: false,
+      cloudSecretAlreadySaved: false,
       error: ''
     },
     syncing: false,
@@ -970,12 +972,14 @@ function schoolCloud() {
       this.githubAuth.token = '';
       this.githubAuth.connected = false;
       this.githubAuth.login = '';
+      this.githubAuth.cloudSecretSaved = false;
+      this.githubAuth.cloudSecretAlreadySaved = false;
       this.githubAuth.error = '';
       this.loginForm.password = '';
       safeStorageRemove(globalThis.sessionStorage, ADMIN_LOGIN_SESSION_KEY);
       this.currentView = 'library';
       this.showLogin = false;
-      this.notify('You have signed out. The GitHub token was cleared from this tab.', 'success');
+      this.notify('You have signed out. The GitHub token was cleared from this tab; the repository Actions secret remains in GitHub.', 'success');
     },
 
     focusLibrarySearch() {
@@ -1250,6 +1254,7 @@ function schoolCloud() {
     },
     async connectGithub() {
       if (!this.isAdmin) return this.openLogin('admin');
+      if (this.githubAuth.verifying) return;
       this.githubAuth.error = '';
       const token = String(this.githubAuth.token || '').trim();
       if (!token) {
@@ -1265,11 +1270,55 @@ function schoolCloud() {
         this.githubAuth.connected = true;
         this.githubAuth.login = result.login;
         this.githubAuth.error = '';
-        this.notify(`Connected to ${result.repository}. The token is held only in memory in this tab.`, 'success');
+        try {
+          const cloudSave = await savePublishingTokenToGitHub({ token, owner: target.owner, repo: target.name });
+          this.githubAuth.cloudSecretSaved = true;
+          this.githubAuth.cloudSecretAlreadySaved = cloudSave.alreadySaved;
+          this.notify(
+            cloudSave.alreadySaved
+              ? `Connected to ${result.repository}. Its ${cloudSave.secretName} Actions secret already exists and was left unchanged.`
+              : `Connected to ${result.repository}. The token was encrypted and saved once as a GitHub Actions secret.`,
+            'success'
+          );
+        } catch (error) {
+          this.githubAuth.cloudSecretSaved = false;
+          this.githubAuth.cloudSecretAlreadySaved = false;
+          this.githubAuth.error = error?.message || 'The token works for this tab, but it could not be saved as a GitHub Actions secret.';
+          this.notify(`Connected for this tab, but the GitHub cloud save failed: ${this.githubAuth.error}`, 'error');
+        }
       } catch (error) {
         this.githubAuth.error = error?.message || 'The token could not be verified.';
         this.githubAuth.activeToken = '';
         this.githubAuth.connected = false;
+      } finally {
+        this.githubAuth.verifying = false;
+        this.refreshIcons();
+      }
+    },
+    async saveGithubSecret() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      if (this.githubAuth.verifying) return;
+      const token = String(this.githubAuth.activeToken || '').trim();
+      if (!this.githubAuth.connected || !token) {
+        this.githubAuth.error = 'Connect a GitHub token in this tab before saving the cloud secret.';
+        return;
+      }
+      this.githubAuth.verifying = true;
+      this.githubAuth.error = '';
+      try {
+        const target = this.repositoryTarget;
+        const result = await savePublishingTokenToGitHub({ token, owner: target.owner, repo: target.name });
+        this.githubAuth.cloudSecretSaved = true;
+        this.githubAuth.cloudSecretAlreadySaved = result.alreadySaved;
+        this.notify(
+          result.alreadySaved
+            ? `${result.secretName} is already saved in GitHub Actions and was not changed.`
+            : `The token was encrypted and saved once as ${result.secretName}.`,
+          'success'
+        );
+      } catch (error) {
+        this.githubAuth.error = error?.message || 'The token could not be saved as a GitHub Actions secret.';
+        this.notify(this.githubAuth.error, 'error');
       } finally {
         this.githubAuth.verifying = false;
         this.refreshIcons();
@@ -1280,8 +1329,10 @@ function schoolCloud() {
       this.githubAuth.activeToken = '';
       this.githubAuth.connected = false;
       this.githubAuth.login = '';
+      this.githubAuth.cloudSecretSaved = false;
+      this.githubAuth.cloudSecretAlreadySaved = false;
       this.githubAuth.error = '';
-      this.notify('The GitHub token has been cleared from this tab.', 'success');
+      this.notify('The GitHub token was cleared from this tab. The saved Actions secret was not changed.', 'success');
     },
     toggleGithubToken() { this.githubAuth.showToken = !this.githubAuth.showToken; },
     githubUploadUrl() {

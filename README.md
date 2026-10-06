@@ -24,10 +24,14 @@ repository; GitHub Pages then makes them available to students.
   the shared visitor and per-file totals into `stats/downloads.json` every 15
   minutes (and when the published library changes), so the GitHub record stays
   current without exposing a write token to visitors.
-- Keeps a publishing token out of the source and repository. An administrator
-  enters it in **Cloud Settings** when ready. It is verified by GitHub and held
-  only in application memory in that tab; it is never stored in localStorage,
-  sessionStorage, or a repository file. Signing out clears it.
+- Keeps the publishing token out of source files and public repository content.
+  In **Cloud Settings**, the administrator can save it once as the private
+  `SCHOOLCLOUD_PUBLISH_TOKEN` GitHub Actions repository secret. The browser
+  encrypts it with GitHub's repository public key before sending it to GitHub;
+  if the secret already exists, the site will not overwrite it. For direct
+  website publishing, the token is also held only in memory in the current tab
+  and is cleared on sign-out or tab close. It is never placed in localStorage,
+  sessionStorage, or a repository file.
 
 ## Admin publishing setup
 
@@ -35,8 +39,11 @@ repository; GitHub Pages then makes them available to students.
    with the administrator out of band; it is not stored in this repository.
 2. Open **Cloud Settings** and confirm the repository is `Petgabs/HSC`.
 3. When ready, paste a **fine-grained GitHub Personal Access Token** scoped to
-   this repository and grant **Contents: Read and write**. The site checks the
-   token before enabling uploads.
+   this repository and grant **Contents: Read and write** plus **Secrets: Read
+   and write**. The site checks repository access, then encrypts and saves the
+   token once as the private `SCHOOLCLOUD_PUBLISH_TOKEN` GitHub Actions secret.
+   If that secret already exists, it is left unchanged. Direct uploads are
+   enabled in the current tab after verification.
 4. Use **Upload Resource**, select an HTML, PDF, Word, Excel or PowerPoint file
    (up to 50 MB), add the metadata, preview it and choose **Publish to GitHub &
    Website**. The file is committed into `apps/`; its metadata is merged into
@@ -46,8 +53,9 @@ repository; GitHub Pages then makes them available to students.
    Pages build/deployment can take a little while after an upload.
 6. In **Settings → Actions → General**, allow GitHub Actions to have write
    permissions for repository contents. The counter-sync workflow uses the
-   built-in `GITHUB_TOKEN` to commit the shared totals; it does not need a
-   personal token or any added secret.
+   built-in `GITHUB_TOKEN`; it does not need the saved publisher secret. The
+   saved token lives only in GitHub's private Actions secret store and can be
+   used by explicitly configured repository workflows.
 
 The client-side admin password check is only a convenience gate for the admin
 controls: a static GitHub Pages site cannot provide server-side authentication.
@@ -57,6 +65,15 @@ downloaded and attacked offline, so the sign-in must not be treated as
 protection for anything sensitive — pick a password that is not reused
 elsewhere, and keep the GitHub token scoped to this repository only. Do not
 upload private student or staff information to a public repository.
+
+GitHub Actions secrets are write-only: GitHub never lets the static website
+retrieve their values, and GitHub Pages does not receive the secret at runtime.
+The saved secret is therefore a secure cloud copy for repository workflows; it
+does not automatically reconnect a new browser tab. To publish from another
+session, the administrator must paste a token again (the site will detect the
+existing secret and will not overwrite it). To rotate it, revoke the old token,
+delete `SCHOOLCLOUD_PUBLISH_TOKEN` in **Settings → Secrets and variables →
+Actions**, then save the replacement from Cloud Settings.
 
 ### Administrator credentials
 
@@ -151,7 +168,7 @@ npm run dev
 ```
 
 The development server listens on `0.0.0.0:8080` and sends no-cache headers.
-`assets/css/app.css` and the two locally vendored runtime scripts are committed
+`assets/css/app.css` and the locally vendored runtime libraries are committed
 build output so GitHub Pages can serve the site without a build step.
 
 ## Repository content

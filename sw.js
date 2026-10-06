@@ -14,7 +14,7 @@
  *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.8.2';
+const VERSION = 'v1.8.3';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -42,7 +42,9 @@ const SHELL_ASSETS = [
   './assets/js/lib/preview.js',
   './assets/js/lib/githubPublish.js',
   './assets/vendor/alpine.esm.js',
-  './assets/vendor/lucide.min.js'
+  './assets/vendor/lucide.min.js',
+  './assets/vendor/libsodium-wrappers.mjs',
+  './assets/vendor/libsodium.mjs'
 ];
 
 self.addEventListener('install', event => {
@@ -85,7 +87,8 @@ function isDownloadableFile(url) {
 
 function isNeverCache(url) {
   // Retain network-only behavior for legacy review data if an older repository
-  // still contains it. Access tokens are never read from or written to files.
+  // still contains it. Plaintext access tokens are never read from or written to
+  // repository files; GitHub Actions secret traffic is also network-only.
   return url.pathname.endsWith('/submissions/queue.json') ||
     url.pathname.includes('/submissions/pending/');
 }

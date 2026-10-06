@@ -7,8 +7,10 @@
  * share it with the administrator out of band. Rotate it by generating a fresh
  * salt and recomputing the digest.
  *
- * Never put a GitHub token in this file: the administrator pastes a replacement
- * into Settings, where it remains in memory in that browser tab only.
+ * Never put a GitHub token in this file. The administrator pastes a token in
+ * Settings; the site encrypts it for a one-time GitHub Actions repository
+ * secret, and holds it in memory in the current browser tab only. GitHub's
+ * write-only secret store is not readable by this static website.
  */
 export const SITE_CONFIG = Object.freeze({
   repository: Object.freeze({
