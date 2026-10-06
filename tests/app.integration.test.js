@@ -283,6 +283,71 @@ describe('School Cloud page integration', () => {
     }
   });
 
+  it('keeps the last saved library copy open when the live refresh fails', async () => {
+    const dom = new JSDOM(html, {
+      url: 'https://schoolcloud.example.test/',
+      runScripts: 'outside-only',
+      pretendToBeVisual: true
+    });
+    const { window } = dom;
+    window.localStorage.setItem('schoolcloud.library.snapshot.v1', JSON.stringify({
+      version: 1,
+      savedAt: '2026-10-06T06:00:00.000Z',
+      manifest: [
+        { type: 'file', name: 'Cached Notes.pdf', path: 'apps/Cached Notes.pdf', download_url: 'apps/Cached%20Notes.pdf' }
+      ],
+      library: {
+        'apps/Cached Notes.pdf': { title: 'Cached Notes', subject: 'Mathematics', years: [12] }
+      },
+      stats: {
+        namespace: 'petgabs-hsc-schoolcloud',
+        updatedAt: '2026-10-06T05:59:00.000Z',
+        visitors: 22,
+        files: { 'apps/Cached Notes.pdf': { downloads: 5, key: 'download-deadbeef' } }
+      }
+    }));
+    const fetchMock = vi.fn(async input => {
+      const url = String(input);
+      if (url.includes('/hit/') || url.includes('/get/')) return jsonResponse({ value: 22 });
+      throw new TypeError('Failed to fetch');
+    });
+    for (const [key, value] of Object.entries({
+      window,
+      document: window.document,
+      navigator: window.navigator,
+      location: window.location,
+      localStorage: window.localStorage,
+      sessionStorage: window.sessionStorage,
+      MutationObserver: window.MutationObserver,
+      Element: window.Element,
+      ShadowRoot: window.ShadowRoot,
+      CustomEvent: window.CustomEvent,
+      HTMLElement: window.HTMLElement,
+      Node: window.Node,
+      Event: window.Event,
+      getComputedStyle: window.getComputedStyle.bind(window),
+      fetch: fetchMock,
+      requestAnimationFrame: callback => window.setTimeout(callback, 0)
+    })) vi.stubGlobal(key, value);
+    window.fetch = fetchMock;
+
+    try {
+      await import('../assets/js/app.js');
+      await new Promise(resolve => setTimeout(resolve, 1300));
+      const state = window.document.body._x_dataStack?.[0];
+      expect(state?.apps).toHaveLength(1);
+      expect(state.apps[0].name).toBe('Cached Notes');
+      expect(state.usingCachedLibrary).toBe(true);
+      expect(state.errors.library).toContain('last saved copy');
+      expect(state.stats.visitors).toBe(22);
+      expect(state.downloadsOf(state.apps[0])).toBeGreaterThanOrEqual(5);
+    } finally {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      window.Alpine?.destroyTree?.(window.document.body);
+      window.close();
+    }
+  });
+
   it('loads file counters lazily and fetches remaining counts on the admin dashboard', async () => {
     const dom = new JSDOM(html, {
       url: 'https://schoolcloud.example.test/',
@@ -386,6 +451,9 @@ describe('School Cloud page integration', () => {
       });
       expect(downloadHits).toHaveLength(1);
       expect(state.downloadsOf(visibleItem)).toBe(8);
+      expect(state.toast.visible).toBe(true);
+      expect(state.toast.tone).toBe('success');
+      expect(state.toast.message).toContain('Download started successfully');
     } finally {
       // Wait out view transitions so their deferred DOM callbacks do not outlive JSDOM.
       await new Promise(resolve => setTimeout(resolve, 200));

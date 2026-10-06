@@ -77,6 +77,20 @@ describe('School Cloud release configuration', () => {
     expect(publisher).toContain('saveAdminCredentialsToGitHub');
   });
 
+  it('keeps a cached library copy, shows success notifications and explains concurrent admin access', async () => {
+    const [html, app, publisher] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../assets/js/lib/githubPublish.js')
+    ]);
+    expect(app).toContain('schoolcloud.library.snapshot.v1');
+    expect(app).toContain('The live library is temporarily unavailable. The last saved copy is still open below.');
+    expect(app).toContain('Download started successfully');
+    expect(app).toContain('stored in GitHub cloud storage and published successfully');
+    expect(html).toContain('Multiple administrators can use the upload and settings pages at the same time.');
+    expect(html).toContain('Multiple administrators can open Cloud Settings together.');
+    expect(publisher).toContain('updateTextFile');
+    expect(publisher).toContain('because it changed repeatedly');
+  });
+
   it('ships with no GitHub credential and allows only the Abacus counter origin', async () => {
     const [config, html, headers] = await Promise.all([
       read('../assets/js/config.js'), read('../index.html'), read('../_headers')

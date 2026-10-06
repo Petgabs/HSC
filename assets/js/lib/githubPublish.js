@@ -242,6 +242,28 @@ async function updateJson({ owner, repo, branch, path, token, message, transform
   throw new Error(`Could not update ${path} because it changed repeatedly. Please retry.`);
 }
 
+async function updateTextFile({ owner, repo, branch, path, token, message, transform }) {
+  for (let attempt = 0; attempt < MAX_CONFLICT_RETRIES; attempt += 1) {
+    const file = await readContents({ owner, repo, branch, path, token });
+    if (!file?.sha) throw new Error(`${path} was not found in the repository. Nothing was changed.`);
+    const current = decodeBase64Text(file.content);
+    const next = transform(current, file);
+    if (next === current) return { changed: false, commitUrl: '' };
+    try {
+      const result = await putContents({
+        owner, repo, branch, path, token,
+        content: encodeBase64Bytes(new TextEncoder().encode(next)),
+        message,
+        sha: file.sha
+      });
+      return { changed: true, commitUrl: result?.commit?.html_url || '' };
+    } catch (error) {
+      if (![409, 422].includes(error.status) || attempt === MAX_CONFLICT_RETRIES - 1) throw error;
+    }
+  }
+  throw new Error(`Could not update ${path} because it changed repeatedly. Please retry.`);
+}
+
 function curatedMetadata(metadata = {}) {
   const allowed = [
     'title', 'description', 'subject', 'years', 'tags', 'keywords', 'topic',
@@ -281,11 +303,22 @@ export async function uploadResourceToGitHub({
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const uploaded = await putContents({
-    owner, repo, branch, path, token,
-    content: encodeBase64Bytes(bytes),
-    message: `Publish resource: ${name}`
-  });
+  let uploaded;
+  try {
+    uploaded = await putContents({
+      owner, repo, branch, path, token,
+      content: encodeBase64Bytes(bytes),
+      message: `Publish resource: ${name}`
+    });
+  } catch (error) {
+    if ([409, 422].includes(error?.status)) {
+      const conflict = await readContents({ owner, repo, branch, path, token });
+      if (conflict) {
+        throw new Error(`A file named “${name}” is already in apps/. Rename the new file before uploading; existing files are never overwritten.`);
+      }
+    }
+    throw error;
+  }
 
   let metadataCommit = null;
   try {
@@ -420,21 +453,17 @@ export function replaceConfigCredentials(source, { admin, master } = {}) {
 export async function saveAdminCredentialsToGitHub({ owner, repo, branch = 'main', token, admin, master }) {
   const cleanToken = String(token || '').trim();
   if (!cleanToken) throw new Error('Connect a GitHub token in Settings before changing the administrator sign-in.');
-  const file = await readContents({ owner, repo, branch, path: ADMIN_CONFIG_PATH, token: cleanToken });
-  if (!file?.sha) throw new Error('assets/js/config.js was not found in the repository. Nothing was changed.');
-  const current = decodeBase64Text(file.content);
-  const next = replaceConfigCredentials(current, { admin, master });
-  if (next === current) return { path: ADMIN_CONFIG_PATH, changed: false, commitUrl: '' };
-  const result = await putContents({
+  const result = await updateTextFile({
     owner, repo, branch, path: ADMIN_CONFIG_PATH, token: cleanToken,
-    content: encodeBase64Bytes(new TextEncoder().encode(next)),
     message: 'Update administrator sign-in credentials',
-    sha: file.sha
+    transform(current) {
+      return replaceConfigCredentials(current, { admin, master });
+    }
   });
   return {
     path: ADMIN_CONFIG_PATH,
-    changed: true,
-    commitUrl: result?.commit?.html_url || ''
+    changed: result.changed,
+    commitUrl: result.commitUrl || ''
   };
 }
 

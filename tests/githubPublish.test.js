@@ -407,6 +407,30 @@ describe('administrator credential rotation', () => {
     expect(JSON.stringify(body)).not.toContain('hsc@bzfls');
   });
 
+  it('re-reads config.js and retries when another admin changes it first', async () => {
+    const source = await readConfig();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'config-sha-1', content: encodeBase64Bytes(new TextEncoder().encode(source)) }))
+      .mockResolvedValueOnce(mockResponse(409, { message: 'Conflict' }))
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'config-sha-2', content: encodeBase64Bytes(new TextEncoder().encode(source)) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/retried' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await saveAdminCredentialsToGitHub({
+      owner: 'Petgabs', repo: 'HSC', token: 'rotating-token',
+      admin: { username: 'new-admin', salt: 'a'.repeat(32), passwordHash: 'b'.repeat(64) }
+    });
+
+    expect(result).toMatchObject({
+      path: ADMIN_CONFIG_PATH, changed: true, commitUrl: 'https://github.com/Petgabs/HSC/commit/retried'
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const firstPut = JSON.parse(fetchMock.mock.calls[1][1].body);
+    const secondPut = JSON.parse(fetchMock.mock.calls[3][1].body);
+    expect(firstPut.sha).toBe('config-sha-1');
+    expect(secondPut.sha).toBe('config-sha-2');
+  });
+
   it('requires a token and stops when the shipped config file cannot be found', async () => {
     await expect(saveAdminCredentialsToGitHub({ owner: 'Petgabs', repo: 'HSC', admin: {} }))
       .rejects.toThrow('Connect a GitHub token');
