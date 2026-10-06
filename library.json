@@ -309,21 +309,5 @@
     "department": "Mathematics",
     "version": "1.0",
     "addedAt": "2026-10-02T11:46:34.815Z"
-  },
-  "apps/Sydney Girls 2026 w. sol.pdf": {
-    "title": "Sydney Girls 2026 w. sol",
-    "subject": "Mathematics",
-    "years": [
-      12
-    ],
-    "tags": [],
-    "keywords": [],
-    "language": "English",
-    "owner": "Peter",
-    "department": "Mathematics",
-    "academicYear": "2026",
-    "visibility": "public",
-    "version": "1.0",
-    "addedAt": "2026-10-06T04:08:37.829Z"
   }
 }
