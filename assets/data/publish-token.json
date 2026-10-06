@@ -11,7 +11,7 @@
     "stop sharing the token, and revoke the token on GitHub if a password leaks."
   ],
   "version": 1,
-  "updatedAt": "2026-10-06T11:51:55.148Z",
+  "updatedAt": "2026-10-06T15:33:33.576Z",
   "repository": "Petgabs/HSC",
   "cipher": "AES-GCM",
   "kdf": {
@@ -20,20 +20,20 @@
     "iterations": 310000
   },
   "token": {
-    "iv": "TK79ifVtlBeFmiaE",
-    "data": "iPOqqjhdgZymgTmKH6J08q4Q3XMmmFORAoldEtnpyTLBvOLPukMXrFe+fmdYUewa+5iauKSl84A="
+    "iv": "Y3Vy0lqPC+SHjT3z",
+    "data": "orocBKkE1Hal41pZ+LFmeDfySoJjCSkItC6cbo3EfsDBlU34omwP6eD5/OVYHwc1EBD5ialMEFg="
   },
   "slots": {
     "admin": {
-      "salt": "ZEmfHknjYADcuGCaqohUyQ==",
-      "iv": "NZl4OV4IsdFhI/nJ",
-      "data": "zgwiFu3Fp6I0g0ILzQIsECD8wblTI8OiNozyl16vJw/a0zg5zVUoW4nV4bjv86BC",
+      "salt": "fgAomJuON9f59INuoFEORw==",
+      "iv": "wP9czZUnXLGWnQWy",
+      "data": "n4utAvj1i2h/MlXDjT0Cz0zyUIhaGf5ep7NsNsRrXmdQAt8e52rsRm9ID53rDcUE",
       "gate": "38db6ef217b6b8073322397c4b77028d"
     },
     "master": {
-      "salt": "9vqyYR6tzoHS//YI6qKxUQ==",
-      "iv": "qKMVGI7JoDa2CuF2",
-      "data": "wMl/CQnXvha5rlh8vR2JtJ8Tz5ox0QZ6q0nYP4dnIV5i46YnXUUca+TONsiqXDcK",
+      "salt": "vkndsue2M0hTqqFTUp3hyQ==",
+      "iv": "6K9hvMVj9PFu68Wa",
+      "data": "dnzqZ5Lj1XqcJVxXf8M06qrQnmAsYpAY4YP4cReStQKC+n5T737mL8BKE3TZnWyO",
       "gate": "23fd392e297167dd7efb39cc345c4808"
     }
   }
