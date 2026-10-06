@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JSDOM, VirtualConsole } from 'jsdom';
+import sodium from 'libsodium-wrappers';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -15,6 +16,8 @@ afterEach(() => {
 
 describe('School Cloud page integration', () => {
   it('boots Alpine, loads public files and reads visitor/file counts from Abacus', async () => {
+    await sodium.ready;
+    const publisherKeyPair = sodium.crypto_box_keypair();
     const errors = [];
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('jsdomError', error => errors.push(error.message));
@@ -36,8 +39,26 @@ describe('School Cloud page integration', () => {
       'apps/HSC revision.pdf': { title: 'HSC Revision Notes', subject: 'Mathematics', years: [12] }
     };
     let savedStatsRecord = null;
+    let savedPublisherSecret = false;
+    let publisherSecretPutCount = 0;
     const fetchMock = vi.fn(async (input, init = {}) => {
       const url = String(input);
+      if (url === 'https://api.github.com/repos/Petgabs/HSC') {
+        return jsonResponse({ full_name: 'Petgabs/HSC', permissions: { push: true } });
+      }
+      if (url.includes('/actions/secrets/public-key')) {
+        return jsonResponse({ key_id: 'test-repository-key', key: btoa(String.fromCharCode(...publisherKeyPair.publicKey)) });
+      }
+      if (url.includes('/actions/secrets/SCHOOLCLOUD_PUBLISH_TOKEN')) {
+        if (init.method === 'PUT') {
+          savedPublisherSecret = true;
+          publisherSecretPutCount += 1;
+          return jsonResponse({}, 201);
+        }
+        return savedPublisherSecret
+          ? jsonResponse({ name: 'SCHOOLCLOUD_PUBLISH_TOKEN', updated_at: '2026-10-06T00:00:00Z' })
+          : jsonResponse({ message: 'Not Found' }, 404);
+      }
       if (url.includes('apps.json')) return jsonResponse(manifest);
       if (url.includes('library.json')) return jsonResponse(library);
       if (url.includes('/contents/stats/downloads.json')) {
@@ -110,6 +131,29 @@ describe('School Cloud page integration', () => {
       expect(visitorReads()).toHaveLength(2);
       expect(savedStatsRecord.visitors).toBe(41);
       expect(savedStatsRecord.files['apps/Year 12 algebra.html'].downloads).toBe(7);
+
+      // The dashboard saves a new PAT once, encrypts it for GitHub, and guards
+      // against duplicate clicks. A later save check leaves the existing
+      // Actions secret untouched.
+      state.githubAuth.connected = false;
+      state.githubAuth.activeToken = '';
+      state.githubAuth.token = 'one-time-admin-token';
+      await Promise.all([state.connectGithub(), state.connectGithub()]);
+      expect(state.githubAuth.connected).toBe(true);
+      expect(state.githubAuth.cloudSecretSaved).toBe(true);
+      expect(state.githubAuth.activeToken).toBe('one-time-admin-token');
+      expect(state.githubAuth.token).toBe('');
+      expect(window.localStorage.getItem('githubToken')).toBeNull();
+      expect(window.sessionStorage.getItem('schoolcloud.githubToken')).toBeNull();
+      expect(publisherSecretPutCount).toBe(1);
+      const savedSecretCall = fetchMock.mock.calls.find(([url, init]) =>
+        String(url).includes('/actions/secrets/SCHOOLCLOUD_PUBLISH_TOKEN') && init?.method === 'PUT');
+      const savedSecretBody = JSON.parse(savedSecretCall[1].body);
+      expect(savedSecretBody).not.toHaveProperty('token');
+      expect(savedSecretBody.encrypted_value).not.toBe('one-time-admin-token');
+
+      await state.saveGithubSecret();
+      expect(publisherSecretPutCount).toBe(1);
     } finally {
       // Allow Alpine's x-transition cleanup timers to settle before JSDOM tears
       // down the globals used by its MutationObserver callbacks.

@@ -2,6 +2,7 @@ const API_ROOT = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_CONFLICT_RETRIES = 3;
+export const PUBLISH_TOKEN_SECRET_NAME = 'SCHOOLCLOUD_PUBLISH_TOKEN';
 
 function encodePath(path) {
   return String(path)
@@ -110,6 +111,86 @@ export async function verifyGitHubToken({ token, owner, repo }) {
     throw new Error('This token can read the repository but does not have write access. Grant Contents: Read and write.');
   }
   return { login: '', repository: repository.full_name };
+}
+
+/**
+ * Save the publisher token one time as a GitHub Actions repository secret.
+ * GitHub only accepts a LibSodium sealed-box value here; the plaintext token is
+ * never written to a repository file or returned by the Secrets API. Existing
+ * secrets are deliberately left unchanged so a repeated save cannot rotate or
+ * overwrite the original credential by accident.
+ */
+export async function savePublishingTokenToGitHub({ owner, repo, token }) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Paste a GitHub Personal Access Token first.');
+
+  const secretPath = `actions/secrets/${encodeURIComponent(PUBLISH_TOKEN_SECRET_NAME)}`;
+  let existingSecret;
+  try {
+    existingSecret = await request(apiUrl(owner, repo, secretPath), cleanToken);
+  } catch (error) {
+    if (error.status === 404) {
+      existingSecret = null;
+    } else if (error.status === 403) {
+      throw new Error('GitHub denied access to repository secrets. Give this fine-grained token Secrets: Read and write permission, then try again.');
+    } else {
+      throw error;
+    }
+  }
+  if (existingSecret) {
+    return {
+      saved: false,
+      alreadySaved: true,
+      secretName: PUBLISH_TOKEN_SECRET_NAME,
+      updatedAt: existingSecret.updated_at || ''
+    };
+  }
+
+  let publicKey;
+  try {
+    publicKey = await request(apiUrl(owner, repo, 'actions/secrets/public-key'), cleanToken);
+  } catch (error) {
+    if ([403, 404].includes(error.status)) {
+      throw new Error('GitHub denied access to repository secrets. Give this fine-grained token Secrets: Read and write permission, then try again.');
+    }
+    throw error;
+  }
+  if (!publicKey?.key || !publicKey?.key_id) {
+    throw new Error('GitHub did not return the repository secrets encryption key. No token was saved.');
+  }
+
+  let sodium;
+  try {
+    ({ default: sodium } = await import('../../vendor/libsodium-wrappers.mjs'));
+    await sodium.ready;
+  } catch {
+    throw new Error('Secure token encryption is unavailable in this browser. No token was saved.');
+  }
+
+  let encryptedValue;
+  try {
+    const sealed = sodium.crypto_box_seal(
+      new TextEncoder().encode(cleanToken),
+      decodeBase64Bytes(publicKey.key)
+    );
+    encryptedValue = encodeBase64Bytes(sealed);
+  } catch {
+    throw new Error('GitHub’s repository key could not encrypt the token. No token was saved.');
+  }
+
+  try {
+    await request(apiUrl(owner, repo, secretPath), cleanToken, {
+      method: 'PUT',
+      body: JSON.stringify({ encrypted_value: encryptedValue, key_id: publicKey.key_id })
+    });
+  } catch (error) {
+    if ([403, 404].includes(error.status)) {
+      throw new Error('GitHub denied permission to save repository secrets. Give this fine-grained token Secrets: Read and write permission, then try again.');
+    }
+    throw error;
+  }
+
+  return { saved: true, alreadySaved: false, secretName: PUBLISH_TOKEN_SECRET_NAME };
 }
 
 export async function listRepositoryFiles({ owner, repo, branch = 'main' }) {

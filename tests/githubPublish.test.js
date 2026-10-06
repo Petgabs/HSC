@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { sanitizeUploadName, saveDownloadStatsToGitHub, uploadResourceToGitHub, verifyGitHubToken } from '../assets/js/lib/githubPublish.js';
+import sodium from 'libsodium-wrappers';
+import {
+  encodeBase64Bytes, PUBLISH_TOKEN_SECRET_NAME, sanitizeUploadName,
+  saveDownloadStatsToGitHub, savePublishingTokenToGitHub,
+  uploadResourceToGitHub, verifyGitHubToken
+} from '../assets/js/lib/githubPublish.js';
 
 function mockResponse(status, body) {
   return {
@@ -14,6 +19,60 @@ function base64Json(value) {
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('one-time GitHub Actions publisher secret', () => {
+  it('encrypts the token for GitHub and never overwrites an existing secret', async () => {
+    await sodium.ready;
+    const keyPair = sodium.crypto_box_keypair();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(404, { message: 'Not Found' }))
+      .mockResolvedValueOnce(mockResponse(200, {
+        key_id: 'repository-key-id', key: encodeBase64Bytes(keyPair.publicKey)
+      }))
+      .mockResolvedValueOnce(mockResponse(201, null));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const token = 'fine-grained-token-example';
+    await expect(savePublishingTokenToGitHub({ owner: 'Petgabs', repo: 'HSC', token }))
+      .resolves.toMatchObject({ saved: true, alreadySaved: false, secretName: PUBLISH_TOKEN_SECRET_NAME });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0][0]).toContain(`/actions/secrets/${PUBLISH_TOKEN_SECRET_NAME}`);
+    expect(fetchMock.mock.calls[1][0]).toContain('/actions/secrets/public-key');
+
+    const secretRequest = fetchMock.mock.calls[2][1];
+    const body = JSON.parse(secretRequest.body);
+    expect(secretRequest.method).toBe('PUT');
+    expect(secretRequest.headers.Authorization).toBe(`Bearer ${token}`);
+    expect(body).toMatchObject({ key_id: 'repository-key-id' });
+    expect(body.encrypted_value).not.toBe(token);
+    expect(JSON.stringify(body)).not.toContain(token);
+
+    const sealed = Uint8Array.from(atob(body.encrypted_value), character => character.charCodeAt(0));
+    const plaintext = sodium.crypto_box_seal_open(sealed, keyPair.publicKey, keyPair.privateKey);
+    expect(new TextDecoder().decode(plaintext)).toBe(token);
+  });
+
+  it('leaves an existing repository secret unchanged', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {
+      name: PUBLISH_TOKEN_SECRET_NAME, updated_at: '2026-10-06T00:00:00Z'
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(savePublishingTokenToGitHub({ owner: 'Petgabs', repo: 'HSC', token: 'replacement-token' }))
+      .resolves.toMatchObject({ saved: false, alreadySaved: true, secretName: PUBLISH_TOKEN_SECRET_NAME });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].method).toBeUndefined();
+  });
+
+  it('requires read/write access to repository secrets before saving', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(403, { message: 'Resource not accessible by integration' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(savePublishingTokenToGitHub({ owner: 'Petgabs', repo: 'HSC', token: 'valid-repo-token' }))
+      .rejects.toThrow('Secrets: Read and write');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('direct GitHub publishing', () => {
   it('rejects path traversal and folder names', () => {

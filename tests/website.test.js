@@ -4,12 +4,19 @@ import { describe, expect, it } from 'vitest';
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
 
 describe('School Cloud release configuration', () => {
-  it('removes teacher sign-in and encrypted shared-token controls', async () => {
-    const html = await read('../index.html');
+  it('removes teacher sign-in and saves publisher credentials only as private GitHub Actions secrets', async () => {
+    const [html, app, publisher] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../assets/js/lib/githubPublish.js')
+    ]);
     expect(html).not.toContain('Teacher Login');
     expect(html).not.toContain("openLogin('teacher')");
     expect(html).not.toContain('Teacher Access');
-    expect(html).not.toContain('Save Token to GitHub Cloud');
+    expect(html).toContain('SCHOOLCLOUD_PUBLISH_TOKEN');
+    expect(html).toContain('Secrets: Read and write');
+    expect(html).toContain('@click="saveGithubSecret()"');
+    expect(app).toContain('savePublishingTokenToGitHub');
+    expect(publisher).toContain('crypto_box_seal');
+    expect(publisher).toContain('alreadySaved: true');
     expect(html).toContain('Administrator Sign In');
     expect(html).toContain('Publish to GitHub &amp; Website');
   });
@@ -30,10 +37,12 @@ describe('School Cloud release configuration', () => {
     expect(headers).not.toContain('supabase.co');
   });
 
-  it('has every first-party asset referenced by the page', async () => {
-    const html = await read('../index.html');
+  it('has every first-party asset referenced by the page and the token-encryption runtime', async () => {
+    const [html, publisher] = await Promise.all([read('../index.html'), read('../assets/js/lib/githubPublish.js')]);
     const paths = [...html.matchAll(/(?:src|href)="\.\/([^"#?]+)"/g)].map(match => match[1]);
+    paths.push('assets/vendor/libsodium-wrappers.mjs', 'assets/vendor/libsodium.mjs');
     for (const path of paths) await expect(access(new URL(`../${path}`, import.meta.url))).resolves.toBeUndefined();
+    expect(publisher).toContain('../../vendor/libsodium-wrappers.mjs');
   });
 
   it('generates apps.json with precedence-safe Liquid and baseurl-proof URLs', async () => {
