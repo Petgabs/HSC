@@ -798,7 +798,7 @@ function schoolCloud() {
       try {
         const result = await verifyConfiguredAdmin(this.loginForm.username, this.loginForm.password);
         if (result.configurationMissing) {
-          this.loginError = 'The original admin username and password hash are not included in this repository checkout. Restore the existing values in assets/js/config.js to keep the same admin login; do not put a plain password there.';
+          this.loginError = 'Administrator sign-in is not configured on this deployment. Set the username, salt and SHA-256 digest in assets/js/config.js — never the plain password.';
           return;
         }
         if (!result.ok) {

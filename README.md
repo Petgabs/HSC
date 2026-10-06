@@ -28,7 +28,8 @@ repository; GitHub Pages then makes them available to students.
 
 ## Admin publishing setup
 
-1. Sign in with the existing administrator account.
+1. Sign in with the administrator account (`hsc-admin`). The password is shared
+   with the administrator out of band; it is not stored in this repository.
 2. Open **Cloud Settings** and confirm the repository is `Petgabs/HSC`.
 3. When ready, paste a **fine-grained GitHub Personal Access Token** scoped to
    this repository and grant **Contents: Read and write**. The site checks the
@@ -44,22 +45,38 @@ repository; GitHub Pages then makes them available to students.
 The client-side admin password check is only a convenience gate for the admin
 controls: a static GitHub Pages site cannot provide server-side authentication.
 The GitHub token is the actual write credential, and GitHub enforces its
-permissions. Do not upload private student or staff information to a public
-repository.
+permissions. Because this repository is public, the stored digest can be
+downloaded and attacked offline, so the sign-in must not be treated as
+protection for anything sensitive — pick a password that is not reused
+elsewhere, and keep the GitHub token scoped to this repository only. Do not
+upload private student or staff information to a public repository.
 
 ### Administrator credentials
 
-The original checkout did not contain the `assets/js/config.js` file that the
-HTML and README referenced, so the original admin username, salt and password
-hash were not available to copy. `assets/js/config.js` deliberately has those
-three fields blank rather than inventing or changing credentials. To keep the
-existing admin login unchanged, restore the existing **username, salt and
-SHA-256 hash** to `SITE_CONFIG.admin` in that file. Do not put the plain password
-or a GitHub token in source control. Until those existing values are restored,
-the public library works but admin sign-in is intentionally disabled.
+The administrator identity lives in `SITE_CONFIG.admin` in
+`assets/js/config.js`. It contains three values and nothing secret:
 
-Expected hash format used by this build: lowercase hex SHA-256 of
-`<salt>:<password>`. No password is included in the repository.
+- `username` — `hsc-admin`.
+- `salt` — a random 32-character hex string.
+- `passwordHash` — lowercase hex SHA-256 of `<salt>:<password>`.
+
+The plain password is never committed. Sign-in compares the digest of the
+entered password against `passwordHash`, so the current password is only known
+to whoever was given it out of band.
+
+To rotate the password, generate a new salt and recompute the digest, then
+replace both values in `assets/js/config.js`:
+
+```sh
+salt=$(openssl rand -hex 16)
+password='<new password>'
+printf 'salt: %s\npasswordHash: %s\n' "$salt" \
+  "$(printf '%s' "$salt:$password" | sha256sum | cut -d' ' -f1)"
+```
+
+Publishing that change and reloading the site is enough — no database or server
+deployment step is involved. Blank out the three fields to disable admin sign-in
+completely.
 
 ## Abacus counters
 
