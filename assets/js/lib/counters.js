@@ -1,7 +1,58 @@
 const DEFAULT_TIMEOUT_MS = 6500;
 
+/** Repository path of the durable download-count record served by the site. */
+export const DOWNLOAD_STATS_PATH = 'stats/downloads.json';
+
 function safeSegment(value) {
   return encodeURIComponent(String(value));
+}
+
+function safeCounterValue(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+}
+
+/**
+ * Merge counter candidates so a display never moves backwards: the live
+ * Abacus value, the last GitHub-saved record and the per-browser fallback
+ * are combined with max-wins. Every layer is untrusted input, so each value
+ * is sanitized before it can influence the total.
+ */
+export function maxCounter(...values) {
+  return values.reduce((best, value) => Math.max(best, safeCounterValue(value)), 0);
+}
+
+/**
+ * Normalize the durable `stats/downloads.json` record served from the same
+ * origin as the site. The record is advisory: malformed shapes degrade to an
+ * empty record, never to an exception, so a bad file cannot break the library.
+ *
+ * Returns `{ visitors, updatedAt, files }` where `files` maps a lower-cased
+ * repository path to `{ path, downloads, key }`.
+ */
+export function normalizeStatsRecord(data) {
+  const empty = { visitors: 0, updatedAt: '', files: new Map() };
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return empty;
+  const visitors = safeCounterValue(data.visitors);
+  const updatedAt = typeof data.updatedAt === 'string' ? data.updatedAt : '';
+  const files = new Map();
+  const rawFiles = data.files;
+  if (rawFiles && typeof rawFiles === 'object' && !Array.isArray(rawFiles)) {
+    for (const [rawPath, entry] of Object.entries(rawFiles)) {
+      const path = String(rawPath || '').normalize('NFC').trim();
+      if (!path || !/^apps\/[^/]+$/i.test(path)) continue;
+      const downloads = safeCounterValue(entry?.downloads);
+      const key = typeof entry?.key === 'string' && entry.key ? entry.key : downloadCounterKey(path);
+      files.set(path.toLowerCase(), { path, downloads, key });
+    }
+  }
+  return { visitors, updatedAt, files };
+}
+
+/** Look up one file's GitHub-saved download total (0 when unknown). */
+export function downloadsFromRecord(record, path) {
+  const key = String(path || '').normalize('NFC').toLowerCase();
+  return safeCounterValue(record?.files?.get(key)?.downloads);
 }
 
 export function downloadCounterKey(path) {

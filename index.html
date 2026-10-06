@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.0</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.1</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -670,17 +670,33 @@
             </div>
 
             <!-- Counter backend status -->
-            <div class="mb-6 flex items-start gap-3 rounded-xl p-4 text-sm"
-                 :class="stats.online ? 'bg-slate-50 border border-slate-200 text-slate-600' : 'bg-amber-50 border border-amber-200 text-amber-800'">
-                <i :data-lucide="stats.online ? 'database' : 'wifi-off'" class="w-4 h-4 mt-0.5" aria-hidden="true"></i>
-                <span x-show="stats.online">
-                    Counters are served by
-                    <strong x-text="stats.backend === 'abacus' ? 'Abacus' : 'this browser only'"></strong>.
-                </span>
-                <span x-show="!stats.online">
-                    Every counter backend is unreachable, so the numbers below come from this browser only.
-                    They will resync automatically when a backend is available.
-                </span>
+            <div class="mb-6 rounded-xl p-4 text-sm" :class="counterStatusClass">
+                <div class="flex items-start gap-3">
+                    <i :data-lucide="counterStatusIcon" class="w-4 h-4 mt-0.5" aria-hidden="true"></i>
+                    <div class="flex-1">
+                        <p x-show="stats.online">
+                            Counters are live from
+                            <strong>Abacus</strong>, shared across every device.
+                        </p>
+                        <p x-show="!stats.online && hasDownloadRecord">
+                            Abacus is unreachable from this browser, so the numbers below come from
+                            the <strong>last counts saved to GitHub</strong>. They resync automatically when Abacus is available.
+                        </p>
+                        <p x-show="!stats.online && !hasDownloadRecord">
+                            Every counter backend is unreachable, so the numbers below come from this browser only.
+                            They will resync automatically when a backend is available.
+                        </p>
+                        <p class="mt-1 text-xs opacity-80" x-text="githubRecordLabel()"></p>
+                    </div>
+                </div>
+                <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-black/10 pt-3">
+                    <button type="button" @click="syncDownloadStatsToGitHub()" :disabled="statsSyncing || stats.loadingDownloads"
+                            class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-slate-700 disabled:opacity-60 focus-ring">
+                        <i :data-lucide="statsSyncing ? 'loader-2' : 'cloud-upload'" class="h-3.5 w-3.5" :class="statsSyncing && 'animate-spin'" aria-hidden="true"></i>
+                        <span x-text="statsSyncing ? 'Saving…' : 'Save counts to GitHub'"></span>
+                    </button>
+                    <span class="text-xs opacity-80">Stores the current visitor and download totals in <code>stats/downloads.json</code> so every visitor sees them even when Abacus is blocked. Requires a GitHub token in Settings.</span>
+                </div>
             </div>
 
             <!-- Library integrity and safety -->
@@ -2175,7 +2191,7 @@
                         <h3 id="abacus-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-2">
                             <i data-lucide="chart-no-axes-combined" class="w-4 h-4" aria-hidden="true"></i> Abacus counters
                         </h3>
-                        <p class="text-xs text-slate-500">The site visitor total and every file's individual download total use Abacus. When Abacus is unavailable, this browser shows a local fallback until the next successful refresh.</p>
+                        <p class="text-xs text-slate-500">The site visitor total and every file's individual download total are counted live by Abacus. The dashboard's "Save counts to GitHub" stores those totals in <code>stats/downloads.json</code>, which every visitor loads from this same website as a fallback when Abacus is unreachable. When both are unavailable, this browser shows a local fallback until the next successful refresh.</p>
                         <p class="mt-2 text-xs text-slate-500">Counter service: <code>abacus.jasoncameron.dev</code> · Namespace: <code>petgabs-hsc-schoolcloud</code></p>
                     </section>
 

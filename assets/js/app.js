@@ -1,7 +1,7 @@
 import Alpine from '../vendor/alpine.esm.js';
 import { SITE_CONFIG, SUBJECTS, YEAR_LEVELS } from './config.js';
-import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, readLocalCounter, writeLocalCounter } from './lib/counters.js';
-import { deleteResourceFromGitHub, readPublicRepositoryFiles, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
+import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from './lib/counters.js';
+import { deleteResourceFromGitHub, readPublicRepositoryFiles, saveDownloadStatsToGitHub, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
 import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
 import { searchResources, sortResources } from './lib/search.js';
 import {
@@ -194,8 +194,11 @@ function schoolCloud() {
       loadingDownloads: true,
       online: false,
       backend: 'local',
-      updatedAtLabel: 'Not yet refreshed'
+      updatedAtLabel: 'Not yet refreshed',
+      recordUpdatedAt: ''
     },
+    downloadStatsRecord: null,
+    statsSyncing: false,
     githubConfig: {
       repo: `${SITE_CONFIG.repository.owner}/${SITE_CONFIG.repository.name}`,
       branch: SITE_CONFIG.repository.branch
@@ -307,19 +310,30 @@ function schoolCloud() {
       const popular = [...this.facets.subjects.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       return popular.map(([subject, count]) => ({ subject, count }));
     },
+    sortByLiveState(items) {
+      // `sortResources` works on stored fields only. The download totals live
+      // in reactive counter state (Abacus / GitHub record / local fallback),
+      // and the "Name (A–Z)" option maps to the shared title sort.
+      if (this.filters.sort === 'downloads') {
+        const title = item => String(item.name || item.fileName || '').toLocaleLowerCase('en-AU');
+        return [...items].sort((a, b) =>
+          this.downloadsOf(b) - this.downloadsOf(a) || title(a).localeCompare(title(b)));
+      }
+      return sortResources(items, this.filters.sort === 'name' ? 'title' : this.filters.sort);
+    },
     get filteredMiniApps() {
       let result = searchResources(this.miniApps, this.filters.query);
       if (this.filters.kind === 'document') return [];
       if (this.filters.subject) result = result.filter(item => item.meta.subject === this.filters.subject);
       if (this.filters.year) result = result.filter(item => (item.meta.years || []).map(String).includes(String(this.filters.year)));
-      return sortResources(result, this.filters.sort);
+      return this.sortByLiveState(result);
     },
     get filteredResources() {
       let result = searchResources(this.resources, this.filters.query);
       if (this.filters.kind === 'app') return [];
       if (this.filters.subject) result = result.filter(item => item.meta.subject === this.filters.subject);
       if (this.filters.year) result = result.filter(item => (item.meta.years || []).map(String).includes(String(this.filters.year)));
-      return sortResources(result, this.filters.sort);
+      return this.sortByLiveState(result);
     },
     get resultCount() { return this.filteredMiniApps.length + this.filteredResources.length; },
     get filterSummary() {
@@ -458,6 +472,24 @@ function schoolCloud() {
       });
       return alerts;
     },
+    get hasDownloadRecord() { return Boolean(this.downloadStatsRecord); },
+    get counterStatusClass() {
+      if (this.stats.online) return 'bg-slate-50 border border-slate-200 text-slate-600';
+      if (this.hasDownloadRecord) return 'bg-sky-50 border border-sky-200 text-sky-800';
+      return 'bg-amber-50 border border-amber-200 text-amber-800';
+    },
+    get counterStatusIcon() {
+      if (this.stats.online) return 'database';
+      if (this.hasDownloadRecord) return 'cloud';
+      return 'wifi-off';
+    },
+    githubRecordLabel() {
+      if (!this.hasDownloadRecord) return 'No counts have been saved to GitHub yet.';
+      const stamp = this.stats.recordUpdatedAt || this.downloadStatsRecord.updatedAt;
+      const when = stamp ? formatDate(stamp) : '';
+      const count = this.downloadStatsRecord.files.size;
+      return `Last saved to GitHub${when ? ` on ${when}` : ''} · ${count} file${count === 1 ? '' : 's'} on record.`;
+    },
     get integrityDiagnosis() { return this._integrityDiagnosis || null; },
     set integrityDiagnosis(value) { this._integrityDiagnosis = value; },
     _integrityDiagnosis: null,
@@ -552,14 +584,29 @@ function schoolCloud() {
       try {
         let manifest = null;
         let library = {};
-        const [manifestResult, metadataResult] = await Promise.allSettled([
+        const [manifestResult, metadataResult, statsResult] = await Promise.allSettled([
           this.fetchJson(`./apps.json?v=${Date.now()}`),
-          this.fetchJson(`./library.json?v=${Date.now()}`)
+          this.fetchJson(`./library.json?v=${Date.now()}`),
+          this.fetchJson(`./stats/downloads.json?v=${Date.now()}`)
         ]);
         if (manifestResult.status === 'fulfilled' && Array.isArray(manifestResult.value)) manifest = manifestResult.value;
         if (metadataResult.status === 'fulfilled') library = metadataResult.value || {};
         this.libraryMetadata = library;
         this.metadataEntries = Object.keys(library).filter(key => !key.startsWith('_')).length;
+        // The GitHub-saved record is advisory: a missing file (older
+        // deployments) or malformed JSON degrades to "no record" and the
+        // counters fall back to Abacus, then to per-browser values.
+        if (statsResult.status === 'fulfilled' && statsResult.value && typeof statsResult.value === 'object') {
+          this.downloadStatsRecord = normalizeStatsRecord(statsResult.value);
+          this.stats.recordUpdatedAt = this.downloadStatsRecord.updatedAt || '';
+        } else {
+          this.downloadStatsRecord = null;
+          this.stats.recordUpdatedAt = '';
+        }
+        // The visitor total may already have settled before this record
+        // arrived (both load concurrently); raise it to the saved value.
+        this.reseedVisitorFromRecord();
+        this.updateCounterStatus();
 
         if (!manifest) {
           const target = this.repositoryTarget;
@@ -618,9 +665,10 @@ function schoolCloud() {
       this._visitorSessionCounted = true;
       this._visitorOnline = false;
       const local = readLocalCounter(key);
+      const recorded = Number(this.downloadStatsRecord?.visitors) || 0;
 
       if (!this._counterClient) {
-        this.stats.visitors = writeLocalCounter(key, isNewSession ? local + 1 : local);
+        this.stats.visitors = writeLocalCounter(key, maxCounter(recorded, isNewSession ? local + 1 : local));
         this.stats.loadingVisitors = false;
         this.updateCounterStatus();
         return;
@@ -631,14 +679,27 @@ function schoolCloud() {
         const value = isNewSession
           ? await this._counterClient.hit(key)
           : await this._counterClient.get(key);
-        this.stats.visitors = writeLocalCounter(key, value);
+        this.stats.visitors = writeLocalCounter(key, maxCounter(recorded, value));
         this._visitorOnline = true;
       } catch {
-        this.stats.visitors = writeLocalCounter(key, isNewSession ? local + 1 : local);
+        this.stats.visitors = writeLocalCounter(key, maxCounter(recorded, isNewSession ? local + 1 : local));
       } finally {
         this.stats.loadingVisitors = false;
+        // The GitHub record loads concurrently with this request and may have
+        // arrived mid-flight; re-apply it last so the badge never settles
+        // below the highest known value regardless of completion order.
+        this.reseedVisitorFromRecord();
         this.updateCounterStatus();
       }
+    },
+
+    reseedVisitorFromRecord() {
+      if (!this.downloadStatsRecord) return;
+      const key = SITE_CONFIG.abacus.visitorKey;
+      this.stats.visitors = writeLocalCounter(key, maxCounter(
+        this.stats.visitors,
+        Number(this.downloadStatsRecord.visitors) || 0
+      ));
     },
 
     prepareDownloadCounters() {
@@ -647,7 +708,13 @@ function schoolCloud() {
       this._counterReadInFlight = [];
       for (const item of this.apps) {
         item.counterKey = downloadCounterKey(item.path);
-        this.stats.downloads[item.id] = readLocalCounter(item.counterKey);
+        // Seed every card from the highest known value so the GitHub-saved
+        // record shows immediately, even where Abacus is blocked. Live reads
+        // can only raise these baselines, never lower them.
+        this.stats.downloads[item.id] = maxCounter(
+          readLocalCounter(item.counterKey),
+          downloadsFromRecord(this.downloadStatsRecord, item.path)
+        );
       }
       this.stats.loadingDownloads = false;
       this.updateCounterStatus();
@@ -700,7 +767,7 @@ function schoolCloud() {
       item.counterKey = key;
       try {
         const value = await this._counterClient.get(key);
-        const total = Math.max(this.downloadsOf(item), value);
+        const total = maxCounter(this.downloadsOf(item), value, downloadsFromRecord(this.downloadStatsRecord, item.path));
         this.stats.downloads[item.id] = total;
         writeLocalCounter(key, total);
         this._downloadCountersOnline = true;
@@ -746,7 +813,56 @@ function schoolCloud() {
     updateCounterStatus(downloadCountersOnline) {
       if (downloadCountersOnline !== undefined) this._downloadCountersOnline = Boolean(downloadCountersOnline);
       this.stats.online = Boolean(this._visitorOnline || this._downloadCountersOnline) && Boolean(this._counterClient);
-      this.stats.backend = this.stats.online ? 'abacus' : 'local';
+      // Three layers, best first: live Abacus totals shared across devices,
+      // the last GitHub-saved record served from this same origin, and finally
+      // per-browser fallback values.
+      this.stats.backend = this.stats.online ? 'abacus' : (this.hasDownloadRecord ? 'github' : 'local');
+    },
+
+    async syncDownloadStatsToGitHub() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
+        this.notify('Connect a GitHub token in Settings before saving counts. It needs Contents: Read and write access.', 'error');
+        this.currentView = 'settings';
+        return;
+      }
+      if (this.statsSyncing) return;
+      this.statsSyncing = true;
+      try {
+        // Refresh live Abacus totals first so the record captures the newest
+        // shared values. Reads are best-effort; the save merges max-wins, so
+        // an unreachable Abacus can never drag the record backwards.
+        await this.loadDownloadCounters(this.apps, true);
+        const files = {};
+        for (const item of this.apps) {
+          files[item.path] = {
+            downloads: this.downloadsOf(item),
+            key: item.counterKey || downloadCounterKey(item.path)
+          };
+        }
+        const target = this.repositoryTarget;
+        const record = {
+          namespace: SITE_CONFIG.abacus.namespace,
+          updatedAt: new Date().toISOString(),
+          visitors: this.stats.visitors,
+          files
+        };
+        const result = await saveDownloadStatsToGitHub({
+          owner: target.owner,
+          repo: target.name,
+          branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
+          token: this.githubAuth.activeToken,
+          stats: record
+        });
+        this.downloadStatsRecord = normalizeStatsRecord(record);
+        this.stats.recordUpdatedAt = record.updatedAt;
+        this.updateCounterStatus();
+        this.notify(`Download counts saved to GitHub (${result.fileCount} file${result.fileCount === 1 ? '' : 's'}). The website record refreshes after GitHub Pages finishes deploying.`, 'success');
+      } catch (error) {
+        this.notify(error?.message || 'The counts could not be saved to GitHub.', 'error');
+      } finally {
+        this.statsSyncing = false;
+      }
     },
 
     async refreshStats() {
@@ -965,7 +1081,7 @@ function schoolCloud() {
     },
 
     downloadsOf(item) { return Math.max(0, Number(this.stats.downloads[item?.id]) || 0); },
-    downloadLabel(item) { return `Abacus download count: ${formatCount(this.downloadsOf(item))}`; },
+    downloadLabel(item) { return `Download count: ${formatCount(this.downloadsOf(item))}`; },
     isLatest(item) { return calculateAgeDays(item?.addedAt || item?.meta?.addedAt) < 1; },
     freshness(item) { return freshness(item); },
     isReviewDue(value) { return isReviewDue(value); },

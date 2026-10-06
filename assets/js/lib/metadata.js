@@ -98,7 +98,10 @@ export function normalizeLibraryEntry(file, curated = {}) {
 }
 
 export function metadataFromLibrary(library) {
-  if (!library || typeof library !== 'object' || Array.isArray(library)) return {};
+  // Callers use Map methods (`.get`), so a missing or malformed library.json
+  // must degrade to an empty Map — never to a plain object that would throw
+  // and take the whole library load down with it.
+  if (!library || typeof library !== 'object' || Array.isArray(library)) return new Map();
   const result = new Map();
   for (const [key, value] of Object.entries(library)) {
     if (key.startsWith('_') || !value || typeof value !== 'object' || Array.isArray(value)) continue;

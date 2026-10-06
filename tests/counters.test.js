@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, readLocalCounter, writeLocalCounter } from '../assets/js/lib/counters.js';
+import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from '../assets/js/lib/counters.js';
 
 describe('Abacus counters', () => {
   beforeEach(() => vi.restoreAllMocks());
@@ -68,5 +68,43 @@ describe('Abacus counters', () => {
     expect(writeLocalCounter('visitors', 6, storage)).toBe(6);
     expect(readLocalCounter('visitors', storage)).toBe(6);
     expect(writeLocalCounter('visitors', -2, storage)).toBe(0);
+  });
+});
+
+describe('GitHub-saved download record', () => {
+  it('merges counter layers with max-wins and sanitizes untrusted values', () => {
+    expect(maxCounter(0, 7, 3)).toBe(7);
+    expect(maxCounter(-5, Number.NaN, undefined, '12')).toBe(12);
+    expect(maxCounter()).toBe(0);
+    expect(maxCounter(2.9, 'not-a-number')).toBe(0);
+  });
+
+  it('normalizes a valid stats record and matches files case-insensitively', () => {
+    const record = normalizeStatsRecord({
+      namespace: 'petgabs-hsc-schoolcloud',
+      updatedAt: '2026-10-06T05:15:00.000Z',
+      visitors: 41,
+      files: {
+        'apps/Year 12 algebra.pdf': { downloads: 8, key: 'download-abc12345' },
+        '../escape.pdf': { downloads: 999 },
+        'apps/notes.txt': { downloads: '7' }
+      }
+    });
+    expect(record.visitors).toBe(41);
+    expect(record.updatedAt).toBe('2026-10-06T05:15:00.000Z');
+    expect(record.files.size).toBe(2);
+    expect(downloadsFromRecord(record, 'apps/YEAR 12 ALGEBRA.pdf')).toBe(8);
+    expect(downloadsFromRecord(record, 'apps/notes.txt')).toBe(7);
+    expect(downloadsFromRecord(record, 'apps/missing.pdf')).toBe(0);
+    expect(downloadsFromRecord(null, 'apps/Year 12 algebra.pdf')).toBe(0);
+  });
+
+  it('degrades malformed records to an empty record instead of throwing', () => {
+    for (const bad of [null, undefined, 42, 'nope', [], { files: [] }, { visitors: -3, files: null }]) {
+      const record = normalizeStatsRecord(bad);
+      expect(record.visitors).toBe(0);
+      expect(record.files.size).toBe(0);
+    }
+    expect(downloadsFromRecord(normalizeStatsRecord({}), 'apps/a.pdf')).toBe(0);
   });
 });

@@ -35,4 +35,43 @@ describe('School Cloud release configuration', () => {
     const paths = [...html.matchAll(/(?:src|href)="\.\/([^"#?]+)"/g)].map(match => match[1]);
     for (const path of paths) await expect(access(new URL(`../${path}`, import.meta.url))).resolves.toBeUndefined();
   });
+
+  it('generates apps.json with precedence-safe Liquid and baseurl-proof URLs', async () => {
+    const template = await read('../apps.json');
+    // Liquid gives and/or no precedence in one condition, so the path and
+    // extension checks must live in nested blocks with a pure `or` chain.
+    expect(template).toContain("{% if file.path contains '/apps/' %}");
+    expect(template).not.toMatch(/{% if [^%]*\band\b[^%]*\bor\b[^%]*%}/);
+    expect(template).toMatch(/{% if extension == '\.html' or extension == '\.htm' or .*\.pptx' %}/);
+    // Repository-relative URLs resolve under project Pages, custom domains and localhost.
+    expect(template).toContain('"download_url": {{ file.path | remove_first: "/" | jsonify }}');
+    expect(template).not.toContain('site.baseurl');
+  });
+
+  it('ships a durable GitHub download-count record served to every visitor', async () => {
+    const record = JSON.parse(await read('../stats/downloads.json'));
+    expect(record.namespace).toBe('petgabs-hsc-schoolcloud');
+    expect(typeof record.updatedAt).toBe('string');
+    expect(record.files).toBeTypeOf('object');
+    for (const [path, entry] of Object.entries(record.files)) {
+      expect(path).toMatch(/^apps\/[^/]+$/);
+      expect(entry.downloads).toBeGreaterThanOrEqual(0);
+      expect(entry.key).toMatch(/^download-[a-f0-9]{8}$/);
+    }
+    const worker = await read('../sw.js');
+    expect(worker).toContain('/stats/downloads.json');
+  });
+
+  it('wires the dashboard GitHub count sync and keeps one release version', async () => {
+    const [html, app, pkg, worker] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../package.json'), read('../sw.js')
+    ]);
+    expect(html).toContain('@click="syncDownloadStatsToGitHub()"');
+    expect(html).toContain('Save counts to GitHub');
+    expect(app).toContain('async syncDownloadStatsToGitHub()');
+    expect(app).toContain('saveDownloadStatsToGitHub');
+    const version = JSON.parse(pkg).version;
+    expect(html).toContain(`>v${version}<`);
+    expect(worker).toContain(`VERSION = 'v${version}'`);
+  });
 });

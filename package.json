@@ -1,6 +1,6 @@
 {
   "name": "school-cloud-system",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "private": true,
   "description": "School Cloud System (powered by Petgabs) — public library of classroom resources",
   "type": "module",

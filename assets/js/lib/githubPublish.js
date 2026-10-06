@@ -273,6 +273,76 @@ export async function readPublicRepositoryFiles({ owner, repo, branch = 'main' }
   return Array.isArray(result) ? result.filter(entry => entry.type === 'file') : [];
 }
 
+/**
+ * Persist the shared download-count record (`stats/downloads.json`) to the
+ * repository. The merge is max-wins per file and for the visitor total, so a
+ * sync from a browser that could not reach Abacus can never drag the saved
+ * totals backwards. Entries for files that no longer exist are kept, because
+ * a file can be temporarily absent from a manifest while a Pages deployment
+ * is still rolling out; stale entries are harmless and can be pruned by hand.
+ */
+export const DOWNLOAD_STATS_PATH = 'stats/downloads.json';
+
+const DOWNLOAD_STATS_COMMENT = [
+  'Durable record of the shared Abacus download counters.',
+  'Written by the admin dashboard ("Save counts to GitHub") and served to',
+  'every visitor as a same-origin fallback when Abacus is unreachable.',
+  'Shape: { namespace, updatedAt, visitors, files: { "apps/Name.pdf": { downloads, key } } }.',
+  'Counts only ever move upwards here: each sync keeps the larger of the',
+  'saved value and the live value. Entries for deleted files may be removed.'
+];
+
+function safeCount(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+}
+
+export async function saveDownloadStatsToGitHub({ owner, repo, branch = 'main', token, stats }) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Connect a GitHub token in Settings before saving counts.');
+  const files = stats?.files && typeof stats.files === 'object' && !Array.isArray(stats.files) ? stats.files : {};
+  const now = new Date().toISOString();
+  const result = await updateJson({
+    owner, repo, branch, path: DOWNLOAD_STATS_PATH, token: cleanToken,
+    message: `Update download counts (${Object.keys(files).length} files)`,
+    transform(current) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        throw new Error(`${DOWNLOAD_STATS_PATH} must contain a JSON object.`);
+      }
+      const mergedFiles = {};
+      const previous = current.files && typeof current.files === 'object' && !Array.isArray(current.files) ? current.files : {};
+      for (const [path, entry] of Object.entries(previous)) {
+        if (typeof path !== 'string' || !path) continue;
+        mergedFiles[path] = {
+          downloads: safeCount(entry?.downloads),
+          key: typeof entry?.key === 'string' && entry.key ? entry.key : String(entry?.key || '')
+        };
+      }
+      for (const [path, entry] of Object.entries(files)) {
+        if (typeof path !== 'string' || !/^apps\/[^/]+$/.test(path)) continue;
+        const key = typeof entry?.key === 'string' && entry.key ? entry.key : (mergedFiles[path]?.key || '');
+        mergedFiles[path] = {
+          downloads: Math.max(safeCount(mergedFiles[path]?.downloads), safeCount(entry?.downloads)),
+          key
+        };
+      }
+      return {
+        _comment: Array.isArray(current._comment) && current._comment.length ? current._comment : DOWNLOAD_STATS_COMMENT,
+        namespace: typeof stats?.namespace === 'string' && stats.namespace ? stats.namespace : (current.namespace || ''),
+        updatedAt: typeof stats?.updatedAt === 'string' && stats.updatedAt ? stats.updatedAt : now,
+        visitors: Math.max(safeCount(current.visitors), safeCount(stats?.visitors)),
+        files: mergedFiles
+      };
+    }
+  });
+  return {
+    path: DOWNLOAD_STATS_PATH,
+    commitUrl: result?.commit?.html_url || '',
+    visitors: safeCount(stats?.visitors),
+    fileCount: Object.keys(files).length
+  };
+}
+
 export function decodeGitHubText(content) {
   return decodeBase64Text(content);
 }

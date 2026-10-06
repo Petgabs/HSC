@@ -5,16 +5,26 @@ permalink: /apps.json
 [
 {% assign first_app = true %}
 {% for file in site.static_files %}
+{% comment %}
+  Liquid gives `and`/`or` no precedence inside one condition (mixed chains
+  evaluate in version-dependent order), so the path check and the extension
+  check stay in nested blocks. A pure `or` chain is associative and safe.
+  `download_url` is the same repository-relative path as `path` so downloads
+  resolve under any base URL: project Pages (/HSC/), a custom domain, or
+  localhost. Never use an absolute path here without a configured baseurl.
+{% endcomment %}
+{% if file.path contains '/apps/' %}
 {% assign extension = file.extname | downcase %}
-{% if file.path contains '/apps/' and extension == '.html' or file.path contains '/apps/' and extension == '.pdf' or file.path contains '/apps/' and extension == '.doc' or file.path contains '/apps/' and extension == '.docx' or file.path contains '/apps/' and extension == '.xls' or file.path contains '/apps/' and extension == '.xlsx' or file.path contains '/apps/' and extension == '.ppt' or file.path contains '/apps/' and extension == '.pptx' %}
+{% if extension == '.html' or extension == '.htm' or extension == '.pdf' or extension == '.doc' or extension == '.docx' or extension == '.xls' or extension == '.xlsx' or extension == '.ppt' or extension == '.pptx' %}
   {% unless first_app %},{% endunless %}{
     "type": "file",
     "name": {{ file.name | jsonify }},
     "path": {{ file.path | remove_first: "/" | jsonify }},
     "sha": {{ file.path | jsonify }},
-    "download_url": {{ site.baseurl | append: file.path | jsonify }}
+    "download_url": {{ file.path | remove_first: "/" | jsonify }}
   }
 {% assign first_app = false %}
+{% endif %}
 {% endif %}
 {% endfor %}
 ]

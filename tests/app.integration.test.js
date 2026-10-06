@@ -211,4 +211,87 @@ describe('School Cloud page integration', () => {
       window.close();
     }
   });
+
+  it('seeds counters from the GitHub-saved record when Abacus is unreachable', async () => {
+    const dom = new JSDOM(html, {
+      url: 'https://schoolcloud.example.test/',
+      runScripts: 'outside-only',
+      pretendToBeVisual: true
+    });
+    const { window } = dom;
+    window.HTMLAnchorElement.prototype.click = vi.fn();
+    const manifest = [
+      { type: 'file', name: 'Year 12 algebra.html', path: 'apps/Year 12 algebra.html', download_url: 'apps/Year 12 algebra.html' },
+      { type: 'file', name: 'HSC revision.pdf', path: 'apps/HSC revision.pdf', download_url: 'apps/HSC revision.pdf' }
+    ];
+    const record = {
+      namespace: 'petgabs-hsc-schoolcloud',
+      updatedAt: '2026-10-06T05:15:00.000Z',
+      visitors: 100,
+      files: {
+        'apps/Year 12 algebra.html': { downloads: 30, key: 'download-aaaaaaaa' },
+        'apps/HSC revision.pdf': { downloads: 12, key: 'download-bbbbbbbb' }
+      }
+    };
+    const unavailable = () => new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 });
+    const fetchMock = vi.fn(async input => {
+      const url = String(input);
+      if (url.includes('apps.json')) return jsonResponse(manifest);
+      if (url.includes('library.json')) return jsonResponse({});
+      if (url.includes('stats/downloads.json')) return jsonResponse(record);
+      if (url.includes('/hit/') || url.includes('/get/')) return unavailable();
+      return jsonResponse([]);
+    });
+    for (const [key, value] of Object.entries({
+      window,
+      document: window.document,
+      navigator: window.navigator,
+      location: window.location,
+      localStorage: window.localStorage,
+      sessionStorage: window.sessionStorage,
+      MutationObserver: window.MutationObserver,
+      Element: window.Element,
+      ShadowRoot: window.ShadowRoot,
+      CustomEvent: window.CustomEvent,
+      HTMLElement: window.HTMLElement,
+      Node: window.Node,
+      Event: window.Event,
+      getComputedStyle: window.getComputedStyle.bind(window),
+      fetch: fetchMock,
+      requestAnimationFrame: callback => window.setTimeout(callback, 0)
+    })) vi.stubGlobal(key, value);
+    window.fetch = fetchMock;
+
+    try {
+      await import('../assets/js/app.js');
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const state = window.document.body._x_dataStack?.[0];
+      expect(state?.apps).toHaveLength(2);
+      expect(state.hasDownloadRecord).toBe(true);
+      expect(state.downloadStatsRecord.files.size).toBe(2);
+      expect(state.githubRecordLabel()).toContain('GitHub');
+      // Every shared layer failed, so the same-origin GitHub record serves the numbers.
+      expect(state.stats.online).toBe(false);
+      expect(state.stats.backend).toBe('github');
+      expect(state.stats.visitors).toBe(100);
+      const seeded = Object.fromEntries(state.apps.map(item => [item.path, state.downloadsOf(item)]));
+      expect(seeded['apps/Year 12 algebra.html']).toBe(30);
+      expect(seeded['apps/HSC revision.pdf']).toBe(12);
+      expect(state.totalDownloads).toBe(42);
+
+      // A download still increments locally and attempts exactly one Abacus hit.
+      const downloaded = state.apps.find(item => item.path === 'apps/Year 12 algebra.html');
+      state.downloadApp(downloaded);
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(state.downloadsOf(downloaded)).toBe(31);
+      const downloadHits = fetchMock.mock.calls.filter(([url]) =>
+        String(url).includes('/hit/') && String(url).includes(downloaded.counterKey));
+      expect(downloadHits).toHaveLength(1);
+      expect(state.stats.backend).toBe('github');
+    } finally {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      window.Alpine?.destroyTree?.(window.document.body);
+      window.close();
+    }
+  });
 });
