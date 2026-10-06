@@ -1,0 +1,16 @@
+# Header policy for hosts that support a _headers file (Cloudflare Pages,
+# Netlify and compatible static hosts). GitHub Pages also gets the equivalent
+# CSP from the meta tag in index.html.
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.github.com https://*.supabase.co https://abacus.jasoncameron.dev; frame-src 'self' blob: https://view.officeapps.live.com; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/apps/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

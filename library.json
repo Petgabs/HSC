@@ -1,0 +1,313 @@
+{
+  "_comment": [
+    "Hand-curated metadata for files in /apps. Keys are the repository path",
+    "(or just the file name). Anything omitted is inferred from the file name",
+    "by assets/js/lib/metadata.js, so this file is entirely optional.",
+    "",
+    "Supported fields: title, description, subject, years (array),",
+    "tags/keywords (array — synonyms), topic, resourceType, language, owner,",
+    "department, academicYear, visibility (public | school | class), version,",
+    "reviewDate, licence, accessibility, addedAt.",
+    "",
+    "`addedAt` is an ISO date/time (e.g. 2026-10-01T09:15:00Z) saying when the",
+    "resource joined the library. The dashboard uses it to show a green",
+    "\"Latest\" badge for the first 24 hours, \"Yesterday\" the day after, and the",
+    "plain date from then on, and to sort newest resources to the top.",
+    "Approved teacher uploads set it automatically.",
+    "",
+    "`title` is the resource's real, human-readable name and always wins over",
+    "the file name: 16G.pdf tells a student far less than a proper title.",
+    "Entries produced by the teacher upload workflow can be copied straight",
+    "from the Review Submissions screen (\"Copy metadata\")."
+  ],
+  "apps/Teacher Class Schedule.xlsx": {
+    "title": "Class schedule",
+    "description": "Study",
+    "subject": "Mathematics",
+    "years": [
+      10
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "version": "1.0"
+  },
+  "apps/Meeting with the Deputy Principal.docx": {
+    "title": "Meeting With Claire",
+    "description": "Minutes of meeting",
+    "subject": "Others",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "version": "1.0",
+    "addedAt": "2026-10-01T11:36:42.353Z"
+  },
+  "apps/Paper 2- Practice questions.docx": {
+    "title": "MAD 12-Paper 2",
+    "description": "Answers the following questions",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "James",
+    "version": "1.0",
+    "addedAt": "2026-10-01T11:46:14.101Z"
+  },
+  "apps/Easy-Paper 1-students.pdf": {
+    "title": "Easy Paper 1 students — Questions",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T12:42:56.894Z"
+  },
+  "apps/Easy-Paper 1-answers.pdf": {
+    "title": "Easy Paper 1 answers — SOLUTIONS",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T12:43:51.509Z"
+  },
+  "apps/Year_12_Mathematics_Advanced_MCQ_Revision (2).html": {
+    "title": "MAD 12 MCQ Revision -Mini app",
+    "description": "Download this mini app and open to your internet browser",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T12:47:00.279Z"
+  },
+  "apps/Easy-Moderate-Paper 2-answers.pdf": {
+    "title": "Easy Moderate Paper 2 answers — SOLUTIONS",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T12:51:00.710Z"
+  },
+  "apps/Easy-Moderate-Paper 2-students.pdf": {
+    "title": "Easy Moderate Paper 2 students — QUESTIONS",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T12:50:18.394Z"
+  },
+  "apps/Year_12_Mathematics_Advanced_Topic_MCQ_Practice.html": {
+    "title": "MAD 12 MCQ Revision (By Topic) — Mini app",
+    "description": "Download this file and open to your internet browser",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T12:55:47.441Z"
+  },
+  "apps/PEM 2025.pdf": {
+    "title": "PEM 2025 — QUESTIONS-3 hours paper",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:00:09.195Z"
+  },
+  "apps/PEM 2025-solutions.pdf": {
+    "title": "PEM 2025-SOLUTIONS",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:03:13.203Z"
+  },
+  "apps/Sydney Boys 2026 2U Trials & Solutions.pdf": {
+    "title": "Sydney Boys 2026 Trials & Solutions — 3 hrs paper",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:09:25.496Z"
+  },
+  "apps/Killara 2026 2U Trials & Solutions.pdf": {
+    "title": "Killara 2026 2U Trials & Solutions — 3 hrs paper",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:08:27.802Z"
+  },
+  "apps/Hunters Hill 2026 2U Trials & Solutions.pdf": {
+    "title": "Hunters Hill 2026 Trials & Solutions — 3 hrs paper",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:12:21.696Z"
+  },
+  "apps/2025-hsc-maths-advanced (1).pdf": {
+    "title": "HSC maths advanced-2025 — 3 hrs paper",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:13:26.430Z"
+  },
+  "apps/2025-hsc-maths-adv-mg.pdf": {
+    "title": "HSC maths adv  2025— SOLUTIONS",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:14:13.089Z"
+  },
+  "apps/2024-hsc-maths-adv.pdf": {
+    "title": "HSC maths adv 2024— 3 hrs paper",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:14:50.814Z"
+  },
+  "apps/2024-hsc-maths-adv-mg.pdf": {
+    "title": "HSC maths adv 2024— SOLUTIONS",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-01T13:15:32.238Z"
+  },
+  "apps/2023-hsc-maths-adv-mg (1).pdf": {
+    "title": "HSC maths adv 2023— SOLUTIONS",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-02T11:37:28.988Z"
+  },
+  "apps/2023-hsc-maths-adv (1).pdf": {
+    "title": "HSC maths adv 20203 — 3 hrs paper",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-02T11:36:45.163Z"
+  },
+  "apps/Penrith 2026 2U Trials & Solutions.pdf": {
+    "title": "Penrith 2026 Trials & Solutions",
+    "description": "",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "version": "1.0",
+    "addedAt": "2026-10-02T11:46:34.815Z"
+  }
+}

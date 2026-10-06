@@ -1,0 +1,32 @@
+# Jekyll configuration for GitHub Pages.
+title: BZFLS-SchoolCloud
+description: Public library of classroom mini apps and resources.
+
+# Keep build tooling, tests and dependencies out of the published site.
+# (Jekyll's defaults are replaced wholesale when `exclude` is set, so the
+# usual entries are repeated here.)
+exclude:
+  - node_modules
+  - package.json
+  - package-lock.json
+  - tailwind.config.js
+  - vitest.config.js
+  - scripts
+  - tests
+  - db
+  - assets/css/tailwind.src.css
+  - README.md
+  - CONTRIBUTING.md
+  - .gitignore
+  - Gemfile
+  - Gemfile.lock
+  - vendor/bundle
+  - vendor/cache
+  - vendor/gems
+  - vendor/ruby
+
+# Serve the built CSS and vendored JS as-is.
+keep_files:
+  - assets/vendor
+
+plugins: []

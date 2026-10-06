@@ -1,0 +1,20 @@
+---
+layout: null
+permalink: /apps.json
+---
+[
+{% assign first_app = true %}
+{% for file in site.static_files %}
+{% assign extension = file.extname | downcase %}
+{% if file.path contains '/apps/' and extension == '.html' or file.path contains '/apps/' and extension == '.pdf' or file.path contains '/apps/' and extension == '.doc' or file.path contains '/apps/' and extension == '.docx' or file.path contains '/apps/' and extension == '.xls' or file.path contains '/apps/' and extension == '.xlsx' or file.path contains '/apps/' and extension == '.ppt' or file.path contains '/apps/' and extension == '.pptx' %}
+  {% unless first_app %},{% endunless %}{
+    "type": "file",
+    "name": {{ file.name | jsonify }},
+    "path": {{ file.path | remove_first: "/" | jsonify }},
+    "sha": {{ file.path | jsonify }},
+    "download_url": {{ site.baseurl | append: file.path | jsonify }}
+  }
+{% assign first_app = false %}
+{% endif %}
+{% endfor %}
+]
