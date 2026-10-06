@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.9.0</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.10.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -2132,7 +2132,7 @@
 
                 <div class="bg-emerald-50 border border-emerald-100 p-4 rounded-lg mb-7 flex gap-3">
                     <i data-lucide="shield-check" class="w-5 h-5 text-emerald-600 flex-shrink-0" aria-hidden="true"></i>
-                    <p class="text-sm text-emerald-800">Save the token once as the private <code>SCHOOLCLOUD_PUBLISH_TOKEN</code> GitHub Actions repository secret. GitHub encrypts it; the token is never written as plaintext to a repository file or website asset. This static website cannot read GitHub secret values back, so a token used for direct publishing remains in memory in the current tab only.</p>
+                    <p class="text-sm text-emerald-800">Save the token once as the private <code>SCHOOLCLOUD_PUBLISH_TOKEN</code> GitHub Actions repository secret. GitHub encrypts it; the token is never written as plaintext to a repository file or website asset. This static website cannot read GitHub secret values back, so the token you connect here is also saved in this browser's storage on this device. Save it once and the dashboard reconnects on its own after a reload, a new tab or the next sign-in.</p>
                 </div>
 
                 <div class="space-y-7">
@@ -2182,7 +2182,7 @@
                                     <i :data-lucide="githubAuth.showToken ? 'eye-off' : 'eye'" class="w-4 h-4" aria-hidden="true"></i>
                                 </button>
                             </div>
-                            <p id="github-token-note" class="text-[11px] text-slate-500">On save, the token is encrypted with GitHub's repository public key and stored as a private Actions secret. If that secret already exists, it is left unchanged.</p>
+                            <p id="github-token-note" class="text-[11px] text-slate-500">On save, the token is encrypted with GitHub's repository public key and stored as a private Actions secret; if that secret already exists it is left unchanged. The token is also saved on this device, so you only paste it once.</p>
                             <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600" role="alert"></p>
                             <button type="button" @click="connectGithub()" :disabled="githubAuth.verifying"
                                     class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 focus-ring">
@@ -2194,12 +2194,12 @@
                             <p class="text-sm font-semibold text-emerald-800">
                                 Connected<span x-show="githubAuth.login" x-text="' as ' + githubAuth.login"></span>.
                             </p>
-                            <p class="text-xs text-emerald-700 mt-1">Direct publishing is enabled in this tab until you sign out or close it.</p>
+                            <p class="text-xs text-emerald-700 mt-1">Direct publishing is enabled. This token is saved on this device, so signing out, closing the tab or reopening the dashboard keeps you connected without pasting it again.</p>
                             <p x-show="githubAuth.cloudSecretSaved" class="text-xs text-emerald-700 mt-2">
                                 <span x-text="githubAuth.cloudSecretAlreadySaved ? 'The repository Actions secret already existed and was left unchanged.' : 'The token was saved once as the private GitHub Actions repository secret.'"></span>
                                 GitHub does not let this website read the secret back.
                             </p>
-                            <p x-show="!githubAuth.cloudSecretSaved" class="text-xs text-amber-800 mt-2">The token is connected for this tab, but GitHub did not confirm the cloud secret. Check Secrets: Read and write permission or retry.</p>
+                            <p x-show="!githubAuth.cloudSecretSaved" class="text-xs text-amber-800 mt-2">The token is connected on this device, but GitHub did not confirm the cloud secret. Check Secrets: Read and write permission or retry.</p>
                             <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600 mt-2" role="alert"></p>
                             <button type="button" x-show="!githubAuth.cloudSecretSaved" @click="saveGithubSecret()" :disabled="githubAuth.verifying"
                                     class="mt-3 inline-flex items-center gap-2 border border-emerald-300 bg-white text-emerald-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-100 disabled:opacity-50 focus-ring">
@@ -2207,8 +2207,12 @@
                                 <span x-text="githubAuth.verifying ? 'Saving securely…' : 'Save once to GitHub Actions'"></span>
                             </button>
                             <button type="button" @click="disconnectGithub()" class="mt-3 ml-2 inline-flex items-center gap-2 border border-emerald-300 bg-white text-emerald-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-100 focus-ring">
-                                <i data-lucide="log-out" class="w-4 h-4" aria-hidden="true"></i> Clear token from this tab
+                                <i data-lucide="log-out" class="w-4 h-4" aria-hidden="true"></i> Forget token on this device
                             </button>
+                            <p class="mt-3 text-[11px] text-emerald-800/80 flex items-start gap-1.5">
+                                <i data-lucide="shield-alert" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" aria-hidden="true"></i>
+                                <span>Remembered tokens are kept in this browser's storage. On a shared or public computer, choose <strong>Forget token on this device</strong> and revoke the token on GitHub.</span>
+                            </p>
                         </div>
                         <a :href="githubTokenUrl()" target="_blank" rel="noopener noreferrer" class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:underline">
                             Create or revoke a GitHub token <i data-lucide="external-link" class="w-3.5 h-3.5" aria-hidden="true"></i>

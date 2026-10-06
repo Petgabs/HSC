@@ -15,6 +15,10 @@ repository; GitHub Pages then makes them available to students.
 - Removes the separate teacher login and teacher credential management. The
   website has one administrator sign-in; admin uploads publish directly rather
   than entering a teacher review queue.
+- Remembers the administrator's verified GitHub token on the device after the
+  first save. Reloading the page, opening a new tab, closing the browser or
+  signing out never asks for the token again; **Forget token on this device**
+  removes it.
 - Uploads supported files to `apps/` and updates `library.json` with their
   metadata through GitHub's Contents API. New files are not silently allowed to
   overwrite an existing file with the same name.
@@ -37,9 +41,13 @@ repository; GitHub Pages then makes them available to students.
   `SCHOOLCLOUD_PUBLISH_TOKEN` GitHub Actions repository secret. The browser
   encrypts it with GitHub's repository public key before sending it to GitHub;
   if the secret already exists, the site will not overwrite it. For direct
-  website publishing, the token is also held only in memory in the current tab
-  and is cleared on sign-out or tab close. It is never placed in localStorage,
-  sessionStorage, or a repository file.
+  website publishing, the verified token is saved once in this browser's
+  storage on that device (`schoolcloud.github.token.v1` in `localStorage`) and
+  restored automatically, so the administrator pastes it one time only — it
+  survives reloads, new tabs and sign-out. **Forget token on this device**
+  removes it again (as does **Clear local settings**). It is never written to a
+  repository file, and GitHub never returns the encrypted Actions secret to the
+  website.
 
 ## Admin publishing setup
 
@@ -51,7 +59,8 @@ repository; GitHub Pages then makes them available to students.
    and write**. The site checks repository access, then encrypts and saves the
    token once as the private `SCHOOLCLOUD_PUBLISH_TOKEN` GitHub Actions secret.
    If that secret already exists, it is left unchanged. Direct uploads are
-   enabled in the current tab after verification.
+   enabled after verification, and the token is remembered in this browser on
+   this device so it never has to be pasted again here.
 4. Use **Upload Resource**, select an HTML, PDF, Word, Excel or PowerPoint file
    (up to 50 MB), add the metadata, preview it and choose **Publish to GitHub &
    Website**. The file is committed into `apps/`; its metadata is merged into
@@ -83,12 +92,31 @@ upload private student or staff information to a public repository.
 
 GitHub Actions secrets are write-only: GitHub never lets the static website
 retrieve their values, and GitHub Pages does not receive the secret at runtime.
-The saved secret is therefore a secure cloud copy for repository workflows; it
-does not automatically reconnect a new browser tab. To publish from another
-session, the administrator must paste a token again (the site will detect the
-existing secret and will not overwrite it). To rotate it, revoke the old token,
-delete `SCHOOLCLOUD_PUBLISH_TOKEN` in **Settings → Secrets and variables →
+The saved secret is therefore a secure cloud copy for repository workflows.
+It cannot reconnect the website by itself, so the verified token is instead
+remembered in this browser's storage on the device where it was entered: after
+the first save, the dashboard reconnects on its own across reloads, new tabs and
+sign-out. A different browser or device must paste a token once (the site will
+detect the existing secret and will not overwrite it). Because a remembered
+token can publish to this repository from that browser profile, use
+**Forget token on this device** on any shared or public computer, and revoke
+the token on GitHub if the device is lost. To rotate the token, revoke the old
+one, delete `SCHOOLCLOUD_PUBLISH_TOKEN` in **Settings → Secrets and variables →
 Actions**, then save the replacement from Cloud Settings.
+
+The remembered token is checked against GitHub the next time the administrator
+signs in. A token GitHub rejects (HTTP 401) is forgotten and the dashboard asks
+for a replacement; a failed check while offline or rate-limited keeps the saved
+token in place for the next attempt.
+
+Browser storage is per origin, and GitHub Pages project sites share one origin
+(`https://<owner>.github.io`). Any other site published under the same owner
+account can therefore read what this site stores in `localStorage`, and a
+cross-site scripting bug on this page could too. Keep the remembered token
+fine-grained and scoped to this repository's Contents and Secrets (the default
+in the setup steps above), prefer a custom domain if other GitHub Pages sites
+share the origin, and revoke the token immediately if you suspect exposure.
+The website never asks for, or needs, any other GitHub credential.
 
 ### Administrator credentials
 
@@ -163,7 +191,7 @@ unreachable, each failed read keeps the previous GitHub value, and every update
 merges max-wins so saved totals never move backwards. GitHub Pages serves the
 updated record after its next deployment. The dashboard's **Save counts to
 GitHub** button remains available for an immediate admin sync and uses the
-in-memory token from **Cloud Settings** (Contents: Read and write). Apart from
+connected token from **Cloud Settings** (Contents: Read and write). Apart from
 explicit admin deletions, old entries for removed files are retained rather
 than discarded automatically.
 

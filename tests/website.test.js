@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
 
 describe('School Cloud release configuration', () => {
-  it('removes teacher sign-in and saves publisher credentials only as private GitHub Actions secrets', async () => {
+  it('removes teacher sign-in, saves the publisher secret in GitHub and remembers the token on the device', async () => {
     const [html, app, publisher] = await Promise.all([
       read('../index.html'), read('../assets/js/app.js'), read('../assets/js/lib/githubPublish.js')
     ]);
@@ -19,6 +19,16 @@ describe('School Cloud release configuration', () => {
     expect(publisher).toContain('alreadySaved: true');
     expect(html).toContain('Administrator Sign In');
     expect(html).toContain('Publish to GitHub &amp; Website');
+    // A verified token is remembered once on the device, survives sign-out,
+    // and can be forgotten explicitly.
+    expect(app).toContain("schoolcloud.github.token.v1");
+    expect(app).toContain('restoreSavedGithubToken');
+    expect(app).toContain('rememberGithubToken');
+    expect(app).toContain('forgetSavedGithubToken');
+    // Signing in restores the remembered token and re-checks it with GitHub.
+    expect(app).toMatch(/if \(this\.restoreSavedGithubToken\(\)\) this\.verifySavedGithubToken\(\)/);
+    expect(html).toContain('Forget token on this device');
+    expect(html).not.toContain('Clear token from this tab');
   });
 
   it('ships with no GitHub credential and allows only the Abacus counter origin', async () => {

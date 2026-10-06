@@ -9,8 +9,9 @@
  *
  * Never put a GitHub token in this file. The administrator pastes a token in
  * Settings; the site encrypts it for a one-time GitHub Actions repository
- * secret, and holds it in memory in the current browser tab only. GitHub's
- * write-only secret store is not readable by this static website.
+ * secret, and remembers it in this browser's storage on that device so the
+ * dashboard reconnects without asking for it again. GitHub's write-only secret
+ * store is not readable by this static website.
  */
 export const SITE_CONFIG = Object.freeze({
   repository: Object.freeze({
