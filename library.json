@@ -309,5 +309,20 @@
     "department": "Mathematics",
     "version": "1.0",
     "addedAt": "2026-10-02T11:46:34.815Z"
+  },
+  "apps/Year_12_Mathematics_Advanced_Topic_MCQ_Practice (2).html": {
+    "title": "Year 12 Mathematics Advanced Topic MCQ Practice (2)",
+    "subject": "MEX",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-06T08:56:02.515Z"
   }
 }
