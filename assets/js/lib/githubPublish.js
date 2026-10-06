@@ -424,6 +424,66 @@ export async function saveDownloadStatsToGitHub({ owner, repo, branch = 'main', 
   };
 }
 
+/**
+ * Remove one file's entry from the shared download-count record
+ * (`stats/downloads.json`). Used when an admin deletes a resource so the
+ * removed file stops appearing in statistics after the next Pages deploy.
+ * Everything else in the record (visitor total, other files, namespace and
+ * comment) is preserved byte-for-byte apart from a refreshed `updatedAt`.
+ * A missing record is a successful no-op: there is nothing to remove.
+ */
+export async function removeDownloadStatsForPath({ owner, repo, branch = 'main', token, path }) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Connect a GitHub token in Settings before saving counts.');
+  const wanted = String(path || '').normalize('NFC').trim();
+  if (!/^apps\/[^/]+$/.test(wanted)) throw new Error('Refusing to edit download counts for a path outside apps/.');
+  const wantedKey = wanted.toLowerCase();
+  const fileName = wanted.slice('apps/'.length);
+
+  const existing = await readContents({ owner, repo, branch, path: DOWNLOAD_STATS_PATH, token: cleanToken });
+  if (!existing) return { path: DOWNLOAD_STATS_PATH, removed: false, missing: true, commitUrl: '' };
+
+  const now = new Date().toISOString();
+  let removed = false;
+  const result = await updateJson({
+    owner, repo, branch, path: DOWNLOAD_STATS_PATH, token: cleanToken,
+    message: `Remove download counts for ${fileName}`,
+    transform(current) {
+      if (!current || typeof current !== 'object' || Array.isArray(current)) {
+        throw new Error(`${DOWNLOAD_STATS_PATH} must contain a JSON object.`);
+      }
+      const previous = current.files && typeof current.files === 'object' && !Array.isArray(current.files)
+        ? current.files
+        : {};
+      const mergedFiles = {};
+      removed = false;
+      for (const [entryPath, entry] of Object.entries(previous)) {
+        if (String(entryPath || '').normalize('NFC').toLowerCase() === wantedKey) {
+          removed = true;
+          continue;
+        }
+        mergedFiles[entryPath] = {
+          downloads: safeCount(entry?.downloads),
+          key: typeof entry?.key === 'string' && entry.key ? entry.key : String(entry?.key || '')
+        };
+      }
+      return {
+        _comment: Array.isArray(current._comment) && current._comment.length ? current._comment : DOWNLOAD_STATS_COMMENT,
+        namespace: typeof current.namespace === 'string' ? current.namespace : '',
+        updatedAt: now,
+        visitors: safeCount(current.visitors),
+        files: mergedFiles
+      };
+    }
+  });
+  return {
+    path: DOWNLOAD_STATS_PATH,
+    removed,
+    missing: false,
+    commitUrl: result?.commit?.html_url || ''
+  };
+}
+
 export function decodeGitHubText(content) {
   return decodeBase64Text(content);
 }

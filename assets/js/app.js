@@ -1,7 +1,7 @@
 import Alpine from '../vendor/alpine.esm.js';
 import { SITE_CONFIG, SUBJECTS, YEAR_LEVELS } from './config.js';
 import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from './lib/counters.js';
-import { deleteResourceFromGitHub, readPublicRepositoryFiles, saveDownloadStatsToGitHub, savePublishingTokenToGitHub, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
+import { deleteResourceFromGitHub, readPublicRepositoryFiles, removeDownloadStatsForPath, saveDownloadStatsToGitHub, savePublishingTokenToGitHub, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
 import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
 import { searchResources, sortResources } from './lib/search.js';
 import {
@@ -1063,27 +1063,104 @@ function schoolCloud() {
         this.currentView = 'settings';
         return;
       }
-      if (!window.confirm(`Delete “${item.name}” from GitHub and the public library? This cannot be undone.`)) return;
+      if (!window.confirm(`Delete “${item.name}” from GitHub (file, library metadata and saved download counts) and the public library? This cannot be undone.`)) return;
       this.deleteGithubResource(item);
     },
     async deleteGithubResource(item) {
       this.deletingAppId = item.id;
       const target = this.repositoryTarget;
+      const branch = this.githubConfig.branch || SITE_CONFIG.repository.branch;
       try {
         await deleteResourceFromGitHub({
-          owner: target.owner, repo: target.name, branch: this.githubConfig.branch,
+          owner: target.owner, repo: target.name, branch,
           token: this.githubAuth.activeToken, path: item.path
         });
-        this.libraryItems = this.libraryItems.filter(entry => entry.id !== item.id);
-        this.notify('The file and its library metadata were deleted from GitHub.', 'success');
+        // Drop the file's saved download total from the shared GitHub record
+        // so it stops appearing in statistics after the next Pages deploy.
+        // The live Abacus counter itself cannot be deleted: counters created
+        // by anonymous hits have no admin key, and Abacus expires idle
+        // counters automatically after 6 months.
+        let statsWarning = '';
+        try {
+          await removeDownloadStatsForPath({
+            owner: target.owner, repo: target.name, branch,
+            token: this.githubAuth.activeToken, path: item.path
+          });
+        } catch (error) {
+          statsWarning = ' Its saved download total in stats/downloads.json still needs cleanup.';
+        }
+        this.forgetDeletedResource(item);
+        this.notify(
+          `“${item.name}” was deleted from GitHub (file, library metadata and saved download counts) and removed from this website. Other devices update after GitHub Pages finishes deploying.${statsWarning}`,
+          statsWarning ? 'error' : 'success'
+        );
+        // Jekyll regenerates apps.json during the Pages build; re-read after a
+        // short delay so the current browser converges to the published list.
+        window.setTimeout(() => this.loadLibrary(), 15_000);
       } catch (error) {
-        if (error.deletedPath) this.libraryItems = this.libraryItems.filter(entry => entry.id !== item.id);
+        if (error.deletedPath) this.forgetDeletedResource(item);
         this.notify(error.deletedPath
           ? 'The file was deleted, but its library metadata still needs cleanup. Check library.json in GitHub.'
           : (error.message || 'The file could not be deleted.'), 'error');
       } finally {
         this.deletingAppId = '';
         this.updateIntegrityReport();
+        this.refreshIcons();
+      }
+    },
+    forgetDeletedResource(item) {
+      if (!item) return;
+      this.libraryItems = this.libraryItems.filter(entry => entry.id !== item.id);
+      delete this.stats.downloads[item.id];
+      this._counterReadStarted = this._counterReadStarted.filter(id => id !== item.id);
+      this._counterReadInFlight = this._counterReadInFlight.filter(id => id !== item.id);
+      delete this._counterReadAt[item.id];
+      try {
+        this.downloadStatsRecord?.files?.delete(String(item.path || '').normalize('NFC').toLowerCase());
+      } catch {
+        // The GitHub-saved record is advisory; a failed cleanup must not
+        // break deletion.
+      }
+      this.purgeDeletedFileFromCache(item);
+    },
+    async purgeDeletedFileFromCache(item) {
+      // Fire-and-forget: every failure path is swallowed so cache quirks can
+      // never break (or un-delete) a resource removal.
+      try {
+        if (!('caches' in globalThis)) return;
+        const base = globalThis.location?.href || 'https://schoolcloud.invalid/';
+        const candidates = [item?.path, item?.downloadUrl, item?.url]
+          .filter(value => typeof value === 'string' && value)
+          .map(value => {
+            try {
+              return new URL(value, base).href;
+            } catch {
+              return '';
+            }
+          })
+          .filter(Boolean);
+        // The library manifests are re-fetched with a cache-busting query on
+        // every load, but purge their canonical keys too so no stale entry
+        // can outlive the deleted file.
+        for (const manifest of ['apps.json', 'library.json', 'stats/downloads.json']) {
+          try {
+            candidates.push(new URL(`./${manifest}`, base).href);
+          } catch {
+            // Ignore unresolvable manifest URLs.
+          }
+        }
+        const names = await caches.keys();
+        await Promise.all(names.map(async name => {
+          if (!String(name).startsWith('schoolcloud-')) return;
+          try {
+            const cache = await caches.open(name);
+            await Promise.all(candidates.map(url => cache.delete(url).catch(() => false)));
+          } catch {
+            // A locked cache must not break deletion.
+          }
+        }));
+      } catch {
+        // The Cache API may be unavailable (private browsing, old browsers).
       }
     },
 

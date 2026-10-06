@@ -18,6 +18,14 @@ repository; GitHub Pages then makes them available to students.
 - Uploads supported files to `apps/` and updates `library.json` with their
   metadata through GitHub's Contents API. New files are not silently allowed to
   overwrite an existing file with the same name.
+- Gives every file row in the admin dashboard (mini-app table, documents
+  table, most-used list, review-due list, upload-age groups and cleanup
+  candidates) its own delete button. One confirmation removes the file from
+  `apps/`, its metadata from `library.json` and its saved total from
+  `stats/downloads.json` in the GitHub repository, clears it from the current
+  browser's library view, download counts and offline cache, and the file
+  disappears from the public website everywhere once GitHub Pages finishes its
+  next deployment.
 - Uses Abacus for the site-visit counter and a separate download counter for
   every published file. Every Download click sends one Abacus `hit`; each new
   browser-tab session sends one visitor `hit`. A GitHub Actions workflow copies
@@ -51,7 +59,14 @@ repository; GitHub Pages then makes them available to students.
 5. GitHub Pages must be configured to publish this repository's `main` branch
    (root). Its next deployment updates `apps.json` and serves the download. A
    Pages build/deployment can take a little while after an upload.
-6. In **Settings → Actions → General**, allow GitHub Actions to have write
+6. To remove a resource, use any delete button in the admin dashboard and
+   confirm. The site deletes the file from `apps/`, its metadata from
+   `library.json` and its saved total from `stats/downloads.json`, then clears
+   it from the current tab and the offline cache. Other devices stop listing
+   it after the next GitHub Pages deployment. Deletion needs the same
+   connected token as uploading (Contents: Read and write) and cannot be
+   undone.
+7. In **Settings → Actions → General**, allow GitHub Actions to have write
    permissions for repository contents. The counter-sync workflow uses the
    built-in `GITHUB_TOKEN`; it does not need the saved publisher secret. The
    saved token lives only in GitHub's private Actions secret store and can be
@@ -131,6 +146,14 @@ total backwards):
 2. **This browser only** — a per-browser local fallback used when both shared
    layers are unreachable.
 
+New files start at zero downloads: Abacus creates each counter on its first
+`hit` (first visit for the visitor total, first download for a file), so an
+upload never sends a phantom increment. Deleting a file removes its entry from
+`stats/downloads.json` alongside the repository file and its metadata; the
+live Abacus counter itself cannot be deleted (counters created by anonymous
+hits have no admin key) and Abacus expires idle counters automatically after 6
+months.
+
 The `Sync Abacus counters to GitHub` workflow reads the current visitor and
 per-file Abacus totals every 15 minutes, and after changes to the published
 library. It commits only when a total or file key changes. The workflow uses
@@ -140,8 +163,9 @@ unreachable, each failed read keeps the previous GitHub value, and every update
 merges max-wins so saved totals never move backwards. GitHub Pages serves the
 updated record after its next deployment. The dashboard's **Save counts to
 GitHub** button remains available for an immediate admin sync and uses the
-in-memory token from **Cloud Settings** (Contents: Read and write). Old entries
-for removed files are retained rather than discarded automatically.
+in-memory token from **Cloud Settings** (Contents: Read and write). Apart from
+explicit admin deletions, old entries for removed files are retained rather
+than discarded automatically.
 
 A counter outage never blocks the library or a file download. The site reports
 which layer is serving the numbers (Abacus, GitHub record, or this browser

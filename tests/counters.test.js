@@ -45,6 +45,26 @@ describe('Abacus counters', () => {
     expect(fetchImpl.mock.calls[1][1]).toMatchObject({ cache: 'no-store', credentials: 'omit', keepalive: true });
   });
 
+  it('invokes fetch as a bare call so browsers never throw Illegal invocation', async () => {
+    // Real browser fetch rejects being called as a method of any object
+    // other than its global (`client.fetch(...)` throws "Illegal invocation"
+    // in Chrome/Safari/Firefox). Plain mocks do not model that, so this fetch
+    // double enforces the same receiver rule to guard the regression where
+    // every live Abacus read and hit failed in real browsers only.
+    const fetchImpl = vi.fn(function () {
+      // eslint-disable-next-line no-invalid-this
+      if (this !== undefined && this !== globalThis) {
+        throw new TypeError("Failed to execute 'fetch': Illegal invocation");
+      }
+      return Promise.resolve(new Response(JSON.stringify({ value: 3 }), { status: 200 }));
+    });
+    const counters = new AbacusCounters({ namespace: 'school-cloud', fetchImpl });
+
+    await expect(counters.get('visitors')).resolves.toBe(3);
+    await expect(counters.hit('visitors')).resolves.toBe(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('treats a missing counter as zero without incrementing it', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response('{"error":"Key not found"}', { status: 404 }));
     const counters = new AbacusCounters({ namespace: 'school-cloud', fetchImpl });

@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.3</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.9.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -522,7 +522,7 @@
                                     <button type="button" x-show="isAdmin && app.source === 'github'" @click="confirmDeleteApp(app)"
                                             :disabled="deletingAppId === app.id"
                                             :aria-label="githubAuth.connected ? 'Delete from the GitHub repository' : 'Delete from GitHub'"
-                                            :title="githubAuth.connected ? 'Delete this file from the GitHub repository and library.json' : 'Connect GitHub Auto-Publish in Settings, or delete manually on github.com'"
+                                            :title="githubAuth.connected ? 'Delete this file from the GitHub repository, library metadata and saved download counts' : 'Connect GitHub Auto-Publish in Settings, or delete manually on github.com'"
                                             class="p-2.5 flex items-center text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring disabled:opacity-60">
                                         <i :data-lucide="deletingAppId === app.id ? 'loader-2' : 'cloud-off'" class="w-4 h-4" :class="deletingAppId === app.id && 'animate-spin'" aria-hidden="true"></i>
                                     </button>
@@ -622,7 +622,7 @@
                                     <button type="button" x-show="isAdmin && resource.source === 'github'" @click="confirmDeleteApp(resource)"
                                             :disabled="deletingAppId === resource.id"
                                             :aria-label="githubAuth.connected ? 'Delete from the GitHub repository' : 'Delete from GitHub'"
-                                            :title="githubAuth.connected ? 'Delete this file from the GitHub repository and library.json' : 'Connect GitHub Auto-Publish in Settings, or delete manually on github.com'"
+                                            :title="githubAuth.connected ? 'Delete this file from the GitHub repository, library metadata and saved download counts' : 'Connect GitHub Auto-Publish in Settings, or delete manually on github.com'"
                                             class="p-2.5 flex items-center text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring disabled:opacity-60">
                                         <i :data-lucide="deletingAppId === resource.id ? 'loader-2' : 'cloud-off'" class="w-4 h-4" :class="deletingAppId === resource.id && 'animate-spin'" aria-hidden="true"></i>
                                     </button>
@@ -1032,9 +1032,17 @@
                                         due <span x-text="formatDate(item.meta.reviewDate)"></span>
                                     </p>
                                 </div>
-                                <button type="button" @click="openResourceInLibrary(item)" class="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 focus-ring">
-                                    Open
-                                </button>
+                                <div class="flex shrink-0 items-center gap-2">
+                                    <button type="button" @click="openResourceInLibrary(item)" class="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 focus-ring">
+                                        Open
+                                    </button>
+                                    <button type="button" @click="confirmDeleteApp(item)" :disabled="deletingAppId === item.id"
+                                            :aria-label="'Delete ' + item.name + ' from GitHub'"
+                                            title="Delete this file from the GitHub repository, library metadata and saved download counts"
+                                            class="rounded-lg p-2 text-slate-300 transition hover:bg-red-50 hover:text-red-500 focus-ring disabled:opacity-60">
+                                        <i :data-lucide="deletingAppId === item.id ? 'loader-2' : 'trash-2'" class="h-4 w-4" :class="deletingAppId === item.id && 'animate-spin'" aria-hidden="true"></i>
+                                    </button>
+                                </div>
                             </li>
                         </template>
                     </ul>
@@ -1081,6 +1089,12 @@
                                     <span x-text="formatCount(downloadsOf(item))"></span>
                                     <span class="font-medium text-emerald-600">downloads</span>
                                 </span>
+                                <button type="button" @click="confirmDeleteApp(item)" :disabled="deletingAppId === item.id"
+                                        :aria-label="'Delete ' + item.name + ' from GitHub'"
+                                        title="Delete this file from the GitHub repository, library metadata and saved download counts"
+                                        class="shrink-0 rounded-lg p-2 text-slate-300 transition hover:bg-red-50 hover:text-red-500 focus-ring disabled:opacity-60">
+                                    <i :data-lucide="deletingAppId === item.id ? 'loader-2' : 'trash-2'" class="h-4 w-4" :class="deletingAppId === item.id && 'animate-spin'" aria-hidden="true"></i>
+                                </button>
                             </li>
                         </template>
                     </ol>
@@ -1240,7 +1254,7 @@
                                     <td class="px-6 py-4 text-right">
                                         <button type="button" @click="confirmDeleteApp(resource)" :disabled="deletingAppId === resource.id"
                                                 :aria-label="'Delete ' + resource.name + (resource.source === 'github' ? ' from GitHub' : '')"
-                                                :title="resource.source === 'github' ? (githubAuth.connected ? 'Delete this ' + fileExtension(resource) + ' file from GitHub Cloud repository and library.json' : 'Delete this file from GitHub') : 'Remove this local file'"
+                                                :title="resource.source === 'github' ? (githubAuth.connected ? 'Delete this ' + fileExtension(resource) + ' file from the GitHub repository, library metadata and saved download counts' : 'Delete this file from GitHub') : 'Remove this local file'"
                                                 class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring disabled:opacity-60">
                                             <i :data-lucide="deletingAppId === resource.id ? 'loader-2' : 'trash-2'" class="w-4 h-4" :class="deletingAppId === resource.id && 'animate-spin'" aria-hidden="true"></i>
                                         </button>
@@ -1453,9 +1467,11 @@
                                                     </p>
                                                 </div>
                                                 <button type="button" @click="deleteCloudResourceById(item.id)"
-                                                        :aria-label="'Delete ' + item.title"
-                                                        class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring shrink-0">
-                                                    <i data-lucide="trash-2" class="w-4 h-4" aria-hidden="true"></i>
+                                                        :disabled="deletingAppId === item.id"
+                                                        :aria-label="'Delete ' + item.title + ' from GitHub'"
+                                                        title="Delete this file from the GitHub repository, library metadata and saved download counts"
+                                                        class="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all focus-ring shrink-0 disabled:opacity-60">
+                                                    <i :data-lucide="deletingAppId === item.id ? 'loader-2' : 'trash-2'" class="w-4 h-4" :class="deletingAppId === item.id && 'animate-spin'" aria-hidden="true"></i>
                                                 </button>
                                             </li>
                                         </template>
@@ -1510,7 +1526,8 @@
                                 </div>
                                 <button type="button" @click="deleteCloudResourceById(item.id)"
                                         :disabled="deletingAppId === item.id"
-                                        :aria-label="'Delete ' + item.title"
+                                        :aria-label="'Delete ' + item.title + ' from GitHub'"
+                                        title="Delete this file from the GitHub repository, library metadata and saved download counts"
                                         class="inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 transition-colors focus-ring disabled:opacity-60">
                                     <i :data-lucide="deletingAppId === item.id ? 'loader-2' : 'trash-2'" class="w-3.5 h-3.5" :class="deletingAppId === item.id && 'animate-spin'" aria-hidden="true"></i>
                                     Delete
@@ -2343,5 +2360,8 @@
     </main>
 
     <script type="module" src="./assets/js/register-sw.js"></script>
+</body>
+</html>
+t>
 </body>
 </html>
