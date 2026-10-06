@@ -5,10 +5,15 @@ import {
 } from './config.js';
 import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from './lib/counters.js';
 import {
-  deleteResourceFromGitHub, readPublicRepositoryFiles, removeDownloadStatsForPath,
-  saveAdminCredentialsToGitHub, saveDownloadStatsToGitHub, savePublishingTokenToGitHub,
+  clearTokenVaultOnGitHub, deleteResourceFromGitHub, readPublicRepositoryFiles,
+  readTokenVaultFromGitHub, removeDownloadStatsForPath, saveAdminCredentialsToGitHub,
+  saveDownloadStatsToGitHub, savePublishingTokenToGitHub, saveTokenVaultToGitHub,
   uploadResourceToGitHub, verifyGitHubToken
 } from './lib/githubPublish.js';
+import {
+  TOKEN_VAULT_PATH, TOKEN_VAULT_SLOT_LABELS, createTokenVault, describeTokenVault,
+  isTokenVault, openTokenVault, tokenVaultSlotIsStale, tokenVaultSlots
+} from './lib/tokenVault.js';
 import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
 import { searchResources, sortResources } from './lib/search.js';
 import {
@@ -36,6 +41,12 @@ const ADMIN_LOGIN_SESSION_KEY = 'schoolcloud.admin.signed-in.v1';
 // dashboard never asks for it twice. It survives sign-out, reloads and new
 // tabs; "Forget token on this device" (or Clear local settings) removes it.
 const SAVED_TOKEN_STORAGE_KEY = 'schoolcloud.github.token.v1';
+// The same verified token is also stored *in the website* — encrypted into
+// assets/data/publish-token.json — so signing in on any other computer
+// reconnects publishing without pasting the token again. This preference
+// controls whether a save does that; it is a convenience setting only and
+// never holds a credential itself.
+const STORE_TOKEN_ON_WEBSITE_KEY = 'schoolcloud.github.token.website.v1';
 // A credential rotated in Cloud Settings is committed to assets/js/config.js
 // on GitHub. Until GitHub Pages deploys that commit, this device remembers the
 // new credential so the change is usable straight away; the copy is dropped as
@@ -320,7 +331,20 @@ function schoolCloud() {
       cloudSecretSaved: false,
       cloudSecretAlreadySaved: false,
       remembered: false,
-      error: ''
+      error: '',
+      // Store the token in the website itself (encrypted) as well as on this
+      // device, so other computers inherit it after signing in.
+      storeOnWebsite: true,
+      website: {
+        status: 'unknown',
+        saved: false,
+        savedAt: '',
+        slots: [],
+        stale: false,
+        busy: false,
+        message: '',
+        commitUrl: ''
+      }
     },
     syncing: false,
     deletingAppId: '',
@@ -404,6 +428,12 @@ function schoolCloud() {
     _draftBytes: null,
     _draftDigest: '',
     _initialized: false,
+    // The administrator passwords typed during this visit. They stay in memory
+    // for this page only — never in storage, never in a repository file — and
+    // are what locks and unlocks the encrypted token stored in the website.
+    _sessionSecrets: { admin: '', master: '' },
+    _websiteVault: null,
+    _websiteTokenPromise: null,
     _lastCrashNoticeAt: 0,
     _dismissedIntegrityIssueIds: [],
     localDrafts: [],
@@ -440,6 +470,42 @@ function schoolCloud() {
     get cloudAppCount() { return this.apps.length; },
     get recentUploadCount() { return this.apps.filter(item => calculateAgeDays(item?.addedAt || item?.meta?.addedAt) <= 30).length; },
     get autoPublishReady() { return this.githubAuth.connected && Boolean(this.githubAuth.activeToken); },
+    /** True once the website itself carries an encrypted copy of the token. */
+    get websiteTokenSaved() { return Boolean(this.githubAuth.website.saved); },
+    get websiteTokenStatusLabel() {
+      const site = this.githubAuth.website;
+      if (site.busy || site.status === 'saving') return 'Saving to the website…';
+      if (site.status === 'checking') return 'Checking the website…';
+      if (site.status === 'saved') return site.stale ? 'Saved — needs re-saving' : 'Stored in this website';
+      if (site.status === 'locked') return 'Stored, but locked';
+      if (site.status === 'error') return 'Website save failed';
+      if (site.status === 'unavailable') return 'Not stored yet';
+      if (site.status === 'missing') return 'Not stored in this website';
+      return 'Not checked yet';
+    },
+    get websiteTokenStatusClass() {
+      const site = this.githubAuth.website;
+      if (site.status === 'saved' && !site.stale) return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+      if (site.status === 'error') return 'bg-rose-50 text-rose-700 ring-rose-200';
+      if (['locked', 'saved', 'unavailable'].includes(site.status)) return 'bg-amber-50 text-amber-800 ring-amber-200';
+      return 'bg-slate-100 text-slate-500 ring-slate-200';
+    },
+    get websiteTokenSlotLabel() {
+      const slots = this.githubAuth.website.slots || [];
+      if (!slots.length) return '';
+      return slots.map(slot => TOKEN_VAULT_SLOT_LABELS[slot] || slot).join(' or the ');
+    },
+    /**
+     * What to tell an administrator who tries to publish without a token.
+     * When the website is carrying an encrypted copy, the answer is to unlock
+     * it rather than to go and create another token.
+     */
+    get tokenMissingMessage() {
+      if (this.githubAuth.website.status === 'locked' || this.githubAuth.website.saved) {
+        return 'This website already stores your publishing token, but it is still locked on this computer. Open Cloud Settings, enter the master password, and publishing reconnects automatically.';
+      }
+      return 'Connect a GitHub Personal Access Token in Settings first. It needs Contents: Read and write access to this repository. Saving it there also stores it in the website, so other computers will not ask again.';
+    },
     get adminPresenceLive() { return Boolean(this.presence.live); },
     get presenceDotClass() {
       if (this.presence.tone === 'online') return 'bg-emerald-500';
@@ -637,7 +703,9 @@ function schoolCloud() {
       const alerts = [];
       if (!this.githubAuth.connected) alerts.push({
         id: 'github-token', tone: 'amber', icon: 'key-round', label: 'GitHub upload is not connected',
-        description: 'Paste the replacement repository token in Settings to publish files directly.',
+        description: this.githubAuth.website.saved || this.githubAuth.website.status === 'locked'
+          ? 'This website stores your token. Open Settings and enter the master password to unlock it on this computer.'
+          : 'Paste the repository token in Settings to publish files directly. It is stored in the website, so other computers inherit it.',
         actionLabel: 'Open Settings', destination: 'settings', count: 1
       });
       if (this.errors.library) alerts.push({
@@ -696,6 +764,7 @@ function schoolCloud() {
         if (previous === 'settings' && view !== 'settings') this.lockAdminAccount();
       });
       this.clearLegacyTokens();
+      this.githubAuth.storeOnWebsite = this.readWebsiteTokenPreference();
       this.loadSavedRepoSettings();
       // Apply a credential this device rotated before the deployment landed.
       this.restoreAdminCredentials();
@@ -768,6 +837,294 @@ function schoolCloud() {
       return true;
     },
 
+    /* ---------------------------------------------------------------------
+     * The token stored in the website
+     *
+     * GitHub's Actions secret store cannot be read back by a static site, and
+     * a browser copy only helps the browser that made it. So the verified
+     * token is also encrypted with the administrator's own passwords and
+     * committed to assets/data/publish-token.json, which GitHub Pages serves
+     * as part of this website. Signing in on any computer downloads that file
+     * and unlocks it in memory, so the token never has to be pasted twice.
+     * ------------------------------------------------------------------- */
+
+    /** Keep a typed password for this page visit only (never stored). */
+    rememberSessionPassword(slot, password) {
+      if (!this._sessionSecrets) this._sessionSecrets = { admin: '', master: '' };
+      if (slot === 'admin' || slot === 'master') this._sessionSecrets[slot] = String(password || '');
+    },
+    clearSessionPasswords(slot = '') {
+      if (!this._sessionSecrets) this._sessionSecrets = { admin: '', master: '' };
+      if (slot) this._sessionSecrets[slot] = '';
+      else this._sessionSecrets = { admin: '', master: '' };
+    },
+    sessionPasswords() {
+      return {
+        admin: String(this._sessionSecrets?.admin || ''),
+        master: String(this._sessionSecrets?.master || '')
+      };
+    },
+    /**
+     * Fetch the encrypted vault. The deployed website copy is tried first
+     * because it is same-origin and free; the GitHub copy is the fallback and
+     * is also the fresher one in the minute after a save, before GitHub Pages
+     * has rebuilt.
+     */
+    async readWebsiteTokenVault({ preferGitHub = false } = {}) {
+      const target = this.repositoryTarget;
+      const branch = this.githubConfig.branch || SITE_CONFIG.repository.branch;
+      const fromSite = async () => {
+        try {
+          const data = await this.fetchJson(`./${TOKEN_VAULT_PATH}?v=${Date.now()}`, { retries: 0 });
+          return isTokenVault(data) ? data : null;
+        } catch {
+          return null;
+        }
+      };
+      const fromGitHub = async () => {
+        try {
+          return await readTokenVaultFromGitHub({
+            owner: target.owner, repo: target.name, branch,
+            token: this.githubAuth.activeToken || ''
+          });
+        } catch {
+          return null;
+        }
+      };
+      return preferGitHub ? ((await fromGitHub()) || (await fromSite())) : ((await fromSite()) || (await fromGitHub()));
+    },
+
+    applyWebsiteVaultState(vault) {
+      const site = this.githubAuth.website;
+      const summary = describeTokenVault(vault);
+      this._websiteVault = summary.present ? vault : null;
+      site.saved = summary.present;
+      site.slots = summary.slots;
+      site.savedAt = summary.updatedAt;
+      site.stale = summary.present && summary.slots.every(slot => tokenVaultSlotIsStale(
+        vault, slot, slot === 'master' ? readMasterGate().salt : readAdminGate().salt
+      ));
+      if (!summary.present) {
+        site.status = 'missing';
+        site.message = 'No publishing token is stored in this website yet. Save one below and every computer you sign in on will have it.';
+      } else if (site.stale) {
+        site.status = 'saved';
+        site.message = 'The stored token was locked with an older password. Save it again so it opens with the current one.';
+      } else {
+        site.status = 'saved';
+        site.message = 'This website carries the publishing token, encrypted. Signing in on another computer unlocks it automatically.';
+      }
+      return summary.present;
+    },
+
+    /** Look up what the website currently stores, without unlocking it. */
+    async refreshWebsiteTokenStatus({ preferGitHub = false } = {}) {
+      const site = this.githubAuth.website;
+      if (site.busy) return site.saved;
+      site.status = 'checking';
+      const vault = await this.readWebsiteTokenVault({ preferGitHub });
+      const present = this.applyWebsiteVaultState(vault);
+      this.refreshIcons();
+      return present;
+    },
+
+    /**
+     * Unlock the stored token with a password the administrator has just
+     * typed, and connect it. Returns true when publishing is ready.
+     */
+    async unlockTokenFromWebsite({ slot = 'admin', password = '', announce = false } = {}) {
+      const secret = String(password || '');
+      if (!this.isAdmin || !secret) return false;
+      const site = this.githubAuth.website;
+      const attempt = async preferGitHub => {
+        const vault = await this.readWebsiteTokenVault({ preferGitHub });
+        if (!this.applyWebsiteVaultState(vault)) return { done: false, retry: false };
+        try {
+          return { done: true, opened: await openTokenVault(vault, { password: secret, slot }) };
+        } catch {
+          return { done: false, retry: !preferGitHub };
+        }
+      };
+
+      let result = await attempt(false);
+      // A vault saved minutes ago, or re-locked by a password rotation, can
+      // still be mid-deployment on the website: the repository copy is the
+      // authoritative one, so try it before giving up.
+      if (!result.done && result.retry) result = await attempt(true);
+      if (!result.done) {
+        if (site.saved) {
+          site.status = 'locked';
+          site.message = `The token stored in this website did not open with your ${TOKEN_VAULT_SLOT_LABELS[slot] || 'password'}. Save it again from Cloud Settings on a computer that is already connected.`;
+        }
+        this.refreshIcons();
+        return false;
+      }
+
+      const token = result.opened.token;
+      const target = this.repositoryTarget;
+      try {
+        const verified = await verifyGitHubToken({ token, owner: target.owner, repo: target.name });
+        this.githubAuth.login = verified.login || '';
+      } catch (error) {
+        if (error?.status === 401 || error?.status === 403) {
+          site.status = 'error';
+          site.message = 'GitHub rejected the token stored in this website — it has probably expired or been revoked. Paste a replacement below and save it again.';
+          this.githubAuth.error = site.message;
+          if (announce) this.notify(site.message, 'error');
+          this.refreshIcons();
+          return false;
+        }
+        // Offline or rate-limited: trust the stored token and let the next
+        // check confirm it rather than locking the administrator out.
+      }
+
+      this.githubAuth.activeToken = token;
+      this.githubAuth.connected = true;
+      this.githubAuth.error = '';
+      this.rememberGithubToken(token);
+      site.status = 'saved';
+      site.message = 'The publishing token stored in this website was unlocked on this computer.';
+      if (announce) {
+        this.notify('Publishing is ready: the access token stored in this website was unlocked for this computer.', 'success');
+      }
+      this.refreshIcons();
+      return true;
+    },
+
+    /**
+     * Encrypt the connected token with the administrator passwords typed this
+     * visit and commit it to the repository, so the website carries it.
+     */
+    async saveTokenToWebsite({ token = '', announce = true } = {}) {
+      const site = this.githubAuth.website;
+      const active = String(token || this.githubAuth.activeToken || '').trim();
+      if (!active) {
+        site.status = 'unavailable';
+        site.message = 'Connect a token first; there is nothing to store in the website yet.';
+        return false;
+      }
+      const passwords = this.sessionPasswords();
+      if (!passwords.admin && !passwords.master) {
+        site.status = 'unavailable';
+        site.message = 'Sign in again (and unlock Cloud Settings) so the token can be locked with your passwords before it is stored in the website.';
+        if (announce) this.notify(site.message, 'error');
+        return false;
+      }
+
+      site.busy = true;
+      site.status = 'saving';
+      const target = this.repositoryTarget;
+      try {
+        const vault = await createTokenVault({
+          token: active,
+          passwords,
+          repository: `${target.owner}/${target.name}`,
+          gates: { admin: readAdminGate().salt, master: readMasterGate().salt }
+        });
+        const result = await saveTokenVaultToGitHub({
+          owner: target.owner,
+          repo: target.name,
+          branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
+          token: active,
+          vault
+        });
+        this._websiteVault = vault;
+        site.saved = true;
+        site.status = 'saved';
+        site.stale = false;
+        site.slots = tokenVaultSlots(vault);
+        site.savedAt = vault.updatedAt || '';
+        site.commitUrl = result.commitUrl || '';
+        site.message = `The token is stored in this website, encrypted with your ${this.websiteTokenSlotLabel || 'administrator password'}. Sign in on any computer and publishing reconnects by itself.`;
+        if (announce) this.notify('The access token is now stored in this website. Signing in on another computer will connect it automatically.', 'success');
+        return true;
+      } catch (error) {
+        site.status = 'error';
+        site.message = error?.message || 'The token could not be stored in the website.';
+        if (announce) this.notify(`The token is connected here, but storing it in the website failed: ${site.message}`, 'error');
+        return false;
+      } finally {
+        site.busy = false;
+        this.refreshIcons();
+      }
+    },
+
+    /** The Cloud Settings button: store the connected token in the website. */
+    async saveTokenToWebsiteNow() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      if (this.githubAuth.website.busy) return;
+      if (!this.guardAction('token')) {
+        this.githubAuth.website.message = this.rateLimit.message;
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
+      this.githubAuth.storeOnWebsite = true;
+      this.rememberWebsiteTokenPreference(true);
+      await this.saveTokenToWebsite({ announce: true });
+    },
+
+    /** Remove the stored copy, leaving the device copy and GitHub untouched. */
+    async removeTokenFromWebsite() {
+      if (!this.isAdmin) return this.openLogin('admin');
+      const site = this.githubAuth.website;
+      if (site.busy) return;
+      const token = String(this.githubAuth.activeToken || '').trim();
+      if (!token) {
+        site.message = 'Connect a token first: changing the website copy is a repository change and needs write access.';
+        this.notify(site.message, 'error');
+        return;
+      }
+      if (!this.guardAction('token')) {
+        this.notify(this.rateLimit.message, 'error');
+        return;
+      }
+      const confirmed = typeof window.confirm !== 'function' || window.confirm(
+        'Remove the encrypted token stored in this website? Other computers will have to paste a token again. Revoke the token on GitHub as well if it may have been exposed.'
+      );
+      if (!confirmed) return;
+      site.busy = true;
+      site.status = 'saving';
+      const target = this.repositoryTarget;
+      try {
+        await clearTokenVaultOnGitHub({
+          owner: target.owner,
+          repo: target.name,
+          branch: this.githubConfig.branch || SITE_CONFIG.repository.branch,
+          token
+        });
+        this._websiteVault = null;
+        this.githubAuth.storeOnWebsite = false;
+        this.rememberWebsiteTokenPreference(false);
+        site.saved = false;
+        site.slots = [];
+        site.stale = false;
+        site.savedAt = '';
+        site.status = 'missing';
+        site.message = 'The stored token was removed from the website. This computer is still connected.';
+        this.notify('The token stored in the website was removed. Other computers will need a token again.', 'success');
+      } catch (error) {
+        site.status = 'error';
+        site.message = error?.message || 'The stored token could not be removed.';
+        this.notify(site.message, 'error');
+      } finally {
+        site.busy = false;
+        this.refreshIcons();
+      }
+    },
+
+    readWebsiteTokenPreference() {
+      const saved = safeStorageGet(globalThis.localStorage, STORE_TOKEN_ON_WEBSITE_KEY);
+      return saved === null ? true : saved !== 'off';
+    },
+    rememberWebsiteTokenPreference(enabled) {
+      safeStorageSet(globalThis.localStorage, STORE_TOKEN_ON_WEBSITE_KEY, enabled ? 'on' : 'off');
+    },
+    toggleStoreTokenOnWebsite() {
+      this.githubAuth.storeOnWebsite = !this.githubAuth.storeOnWebsite;
+      this.rememberWebsiteTokenPreference(this.githubAuth.storeOnWebsite);
+      this.refreshIcons();
+    },
+
     /**
      * Re-check a remembered token after sign-in. Only a credential GitHub
      * rejects (HTTP 401) is forgotten; an offline or rate-limited check leaves
@@ -793,6 +1150,15 @@ function schoolCloud() {
           this.githubAuth.connected = false;
           this.githubAuth.error = 'The GitHub token saved on this device was rejected. Paste a replacement token and connect again.';
           this.notify(this.githubAuth.error, 'error');
+          // The website may already carry a newer token saved from another
+          // computer; unlocking it silently repairs this device.
+          const passwords = this.sessionPasswords();
+          if (passwords.admin || passwords.master) {
+            const slot = passwords.admin ? 'admin' : 'master';
+            this._websiteTokenPromise = this.unlockTokenFromWebsite({
+              slot, password: passwords[slot], announce: true
+            }).catch(() => false);
+          }
         } else {
           this.githubAuth.error = error?.message || 'The saved GitHub token could not be checked.';
         }
@@ -1320,10 +1686,21 @@ function schoolCloud() {
         }
         this.clearRateLimit('login');
         this.isAdmin = true;
+        // Held in memory for this visit only: it is the key that opens the
+        // token this website stores for every computer.
+        const signInPassword = String(this.loginForm.password || '');
+        this.rememberSessionPassword('admin', signInPassword);
         try { sessionStorage.setItem(ADMIN_LOGIN_SESSION_KEY, SITE_CONFIG.admin.username); } catch { /* Current tab stays signed in. */ }
         // Reconnect the token saved on this device (and quietly re-check it)
-        // so returning administrators start ready to publish.
+        // so returning administrators start ready to publish. On a computer
+        // that has never been used before there is nothing saved locally, so
+        // the encrypted copy carried by the website is unlocked instead.
         if (this.restoreSavedGithubToken()) this.verifySavedGithubToken();
+        else {
+          this._websiteTokenPromise = this.unlockTokenFromWebsite({
+            slot: 'admin', password: signInPassword, announce: true
+          }).catch(() => false);
+        }
         this.showLogin = false;
         this.loginForm.password = '';
         // Announce presence straight away so the indicator lights up for
@@ -1339,6 +1716,9 @@ function schoolCloud() {
     logout() {
       this.stopAdminPresenceHeartbeat();
       this.isAdmin = false;
+      // The passwords that unlock the stored token leave memory with the
+      // session; the encrypted copy in the website is untouched.
+      this.clearSessionPasswords();
       this.githubAuth.activeToken = '';
       this.githubAuth.token = '';
       this.githubAuth.connected = false;
@@ -1355,9 +1735,11 @@ function schoolCloud() {
       this.currentView = 'library';
       this.showLogin = false;
       this.notify(
-        this.githubAuth.remembered
-          ? 'You have signed out. The GitHub token stays saved on this device and reconnects the next time you sign in.'
-          : 'You have signed out. The repository Actions secret remains in GitHub.',
+        this.githubAuth.website.saved
+          ? 'You have signed out. The encrypted token stays stored in the website, so signing in on any computer reconnects publishing.'
+          : this.githubAuth.remembered
+            ? 'You have signed out. The GitHub token stays saved on this device and reconnects the next time you sign in.'
+            : 'You have signed out. The repository Actions secret remains in GitHub.',
         'success'
       );
     },
@@ -1644,7 +2026,7 @@ function schoolCloud() {
         return;
       }
       if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
-        this.uploadMessage = 'Connect a GitHub Personal Access Token in Settings first. It needs Contents: Read and write access to this repository.';
+        this.uploadMessage = this.tokenMissingMessage;
         this.uploadMessageTone = 'error';
         return;
       }
@@ -1844,21 +2226,33 @@ function schoolCloud() {
         const rememberNote = remembered
           ? ' The token is saved on this device, so you will not need to paste it again.'
           : '';
+        // Engrave the token into the website itself: encrypted with the
+        // administrator passwords and committed to the repository, so every
+        // other computer inherits it the moment the administrator signs in.
+        let websiteNote = '';
+        if (this.githubAuth.storeOnWebsite) {
+          const storedOnWebsite = await this.saveTokenToWebsite({ token, announce: false });
+          websiteNote = storedOnWebsite
+            ? ' It is also stored in the website, so any other computer that signs in gets it automatically.'
+            : ` It is not stored in the website yet: ${this.githubAuth.website.message}`;
+        } else {
+          websiteNote = ' It was not stored in the website, so other computers will still need their own copy.';
+        }
         try {
           const cloudSave = await savePublishingTokenToGitHub({ token, owner: target.owner, repo: target.name });
           this.githubAuth.cloudSecretSaved = true;
           this.githubAuth.cloudSecretAlreadySaved = cloudSave.alreadySaved;
           this.notify(
             cloudSave.alreadySaved
-              ? `Connected to ${result.repository}. Its ${cloudSave.secretName} Actions secret already exists and was left unchanged.${rememberNote}`
-              : `Connected to ${result.repository}. The token was encrypted and saved once as a GitHub Actions secret.${rememberNote}`,
+              ? `Connected to ${result.repository}. Its ${cloudSave.secretName} Actions secret already exists and was left unchanged.${rememberNote}${websiteNote}`
+              : `Connected to ${result.repository}. The token was encrypted and saved once as a GitHub Actions secret.${rememberNote}${websiteNote}`,
             'success'
           );
         } catch (error) {
           this.githubAuth.cloudSecretSaved = false;
           this.githubAuth.cloudSecretAlreadySaved = false;
           this.githubAuth.error = error?.message || 'The token is connected on this device, but it could not be saved as a GitHub Actions secret.';
-          this.notify(`Connected on this device, but the GitHub cloud save failed: ${this.githubAuth.error}`, 'error');
+          this.notify(`Connected on this device, but the GitHub cloud save failed: ${this.githubAuth.error}${websiteNote}`, 'error');
         }
       } catch (error) {
         this.githubAuth.error = error?.message || 'The token could not be verified.';
@@ -1911,7 +2305,12 @@ function schoolCloud() {
       this.githubAuth.cloudSecretAlreadySaved = false;
       this.githubAuth.error = '';
       this.forgetSavedGithubToken();
-      this.notify('The GitHub token was forgotten on this device. The saved Actions secret in GitHub was not changed.', 'success');
+      this.notify(
+        this.githubAuth.website.saved
+          ? 'The GitHub token was forgotten on this device. The encrypted copy stored in the website was not changed — use “Remove from this website” as well to stop sharing it.'
+          : 'The GitHub token was forgotten on this device. The saved Actions secret in GitHub was not changed.',
+        'success'
+      );
     },
     toggleGithubToken() { this.githubAuth.showToken = !this.githubAuth.showToken; },
     githubUploadUrl() {
@@ -1972,6 +2371,15 @@ function schoolCloud() {
           return;
         }
         this.clearRateLimit('master');
+        // Cloud Settings is open, so the master password can now unlock (or
+        // re-lock) the token this website stores for every computer.
+        this.rememberSessionPassword('master', password);
+        this._websiteTokenPromise = (async () => {
+          if (!this.githubAuth.connected || !this.githubAuth.activeToken) {
+            return this.unlockTokenFromWebsite({ slot: 'master', password, announce: true });
+          }
+          return this.refreshWebsiteTokenStatus();
+        })().catch(() => false);
         const focusAccount = this.adminAccount.focusAccountOnUnlock;
         this.adminAccount.masterPassword = '';
         this.adminAccount.showMasterPassword = false;
@@ -2003,6 +2411,8 @@ function schoolCloud() {
     lockAdminAccount({ announce = false } = {}) {
       this.adminAccount.unlockAttempt += 1;
       this.adminAccount.unlocked = false;
+      // The master password is only held while the settings page is open.
+      this.clearSessionPasswords('master');
       this.adminAccount.checking = false;
       this.adminAccount.masterPassword = '';
       this.adminAccount.showMasterPassword = false;
@@ -2097,8 +2507,21 @@ function schoolCloud() {
         applyAdminGate(admin);
         if (master) applyMasterGate(master);
         try { sessionStorage.setItem(ADMIN_LOGIN_SESSION_KEY, username); } catch { /* Current tab stays signed in. */ }
+        // The stored token is locked with these passwords, so a rotation has
+        // to re-lock it — otherwise the website copy would stop opening on
+        // the next computer.
+        if (wantsNewPassword) this.rememberSessionPassword('admin', form.password);
+        if (wantsNewMaster) this.rememberSessionPassword('master', form.masterPassword);
+        let websiteNote = '';
+        if (this.githubAuth.website.saved || this.githubAuth.website.status === 'locked') {
+          const relocked = await this.saveTokenToWebsite({ announce: false });
+          websiteNote = relocked
+            ? ' The publishing token stored in this website was re-locked with the new password.'
+            : ' Important: the publishing token stored in this website could not be re-locked, so save it again from the GitHub upload access section.';
+        }
         state.notice = (wantsNewMaster ? 'The administrator sign-in and the master password were updated' : 'The administrator sign-in was updated')
-          + ' and committed to assets/js/config.js. It is already active here and reaches every other device once GitHub Pages finishes deploying (usually within a minute).';
+          + ' and committed to assets/js/config.js. It is already active here and reaches every other device once GitHub Pages finishes deploying (usually within a minute).'
+          + websiteNote;
         state.noticeUrl = result.commitUrl || '';
         state.form = { ...emptyAdminAccountForm(), username };
         this.notify(wantsNewMaster ? 'Administrator sign-in and master password updated.' : 'Administrator sign-in updated.', 'success');
@@ -2184,8 +2607,12 @@ function schoolCloud() {
       if (!this.githubAuth.connected) findings.push({
         id: 'github-disconnected', label: 'Repository write access is not connected', count: 1,
         state: 'info', autoFixable: false,
-        cause: 'No GitHub token is saved on this device.',
-        remedy: 'Paste the replacement token in Settings when ready.'
+        cause: this.githubAuth.website.saved
+          ? 'The token stored in this website has not been unlocked on this computer yet.'
+          : 'No GitHub token is saved on this device or in this website.',
+        remedy: this.githubAuth.website.saved
+          ? 'Open Cloud Settings and enter the master password; the stored token then connects itself.'
+          : 'Paste the token in Settings when ready — saving it also stores it in the website for every other computer.'
       });
       this.integrityDiagnosis = {
         headline: findings.length ? `${findings.length} item(s) need attention` : 'The published library looks consistent.',

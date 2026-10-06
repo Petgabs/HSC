@@ -19,6 +19,13 @@
  * secret, and remembers it in this browser's storage on that device so the
  * dashboard reconnects without asking for it again. GitHub's write-only secret
  * store is not readable by this static website.
+ *
+ * So that the token also works on a different computer, the same save
+ * encrypts it with the administrator and master passwords and commits the
+ * ciphertext to `assets/data/publish-token.json` (see lib/tokenVault.js).
+ * Signing in anywhere unlocks that copy in the browser. The passwords below
+ * are therefore what protect the publishing token as well: keep them long and
+ * unique, and re-save the token after any rotation.
  */
 export const SITE_CONFIG = Object.freeze({
   repository: Object.freeze({

@@ -171,6 +171,52 @@ describe('School Cloud release configuration', () => {
     expect(worker).toContain("'./assets/js/lib/uploadSafety.js'");
   });
 
+  it('stores the publishing token in the website itself, as ciphertext only', async () => {
+    const [html, app, vaultLib, publisher, worker, vaultFile] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../assets/js/lib/tokenVault.js'),
+      read('../assets/js/lib/githubPublish.js'), read('../sw.js'), read('../assets/data/publish-token.json')
+    ]);
+
+    // The shipped record is an empty vault: a shape, never a credential.
+    const vault = JSON.parse(vaultFile);
+    expect(vault.version).toBe(1);
+    expect(vault.cipher).toBe('AES-GCM');
+    expect(vault.kdf).toMatchObject({ name: 'PBKDF2', hash: 'SHA-256' });
+    expect(vault.token).toBeNull();
+    expect(vault.slots).toEqual({});
+    expect(vaultFile).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
+
+    // Encryption happens in the browser, with the administrator's passwords.
+    expect(vaultLib).toContain("TOKEN_VAULT_PATH = 'assets/data/publish-token.json'");
+    expect(vaultLib).toContain("const KDF_NAME = 'PBKDF2'");
+    expect(vaultLib).toContain("const CIPHER = 'AES-GCM'");
+    expect(vaultLib).toContain('TOKEN_VAULT_ITERATIONS = 310_000');
+    expect(publisher).toContain('Refusing to commit a token store that is not encrypted.');
+    expect(publisher).toContain('Refusing to commit the token in readable form.');
+
+    // Saving stores it; signing in anywhere unlocks it; rotating re-locks it.
+    expect(app).toContain('saveTokenToWebsite');
+    expect(app).toContain('unlockTokenFromWebsite');
+    expect(app).toContain('clearTokenVaultOnGitHub');
+    expect(app).toMatch(/rememberSessionPassword\('admin', signInPassword\)/);
+    expect(app).toMatch(/rememberSessionPassword\('master', password\)/);
+    // The typed passwords live in memory for the visit only.
+    expect(app).toContain('_sessionSecrets');
+    expect(app).toMatch(/logout\(\) \{[\s\S]*clearSessionPasswords\(\)/);
+    expect(app).not.toContain('schoolcloud.admin.password');
+
+    // Cloud Settings exposes the stored copy, with a way back out of it.
+    expect(html).toContain('id="website-token-storage"');
+    expect(html).toContain('@click="saveTokenToWebsiteNow()"');
+    expect(html).toContain('@click="removeTokenFromWebsite()"');
+    expect(html).toContain('Store this token in the website as well');
+    expect(html).toContain('assets/data/publish-token.json');
+
+    // Offline shell knows the module, and the record is never served stale.
+    expect(worker).toContain("'./assets/js/lib/tokenVault.js'");
+    expect(worker).toContain('/assets/data/publish-token.json');
+  });
+
   it('wires automatic GitHub counter snapshots, the admin sync, and one release version', async () => {
     const [html, app, pkg, worker, workflow, syncScript] = await Promise.all([
       read('../index.html'), read('../assets/js/app.js'), read('../package.json'), read('../sw.js'),

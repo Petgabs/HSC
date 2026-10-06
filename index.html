@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.12.0</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.13.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -2049,7 +2049,7 @@
                 <div x-show="adminAccount.unlocked" x-cloak class="bg-emerald-50 border border-emerald-100 p-4 rounded-lg mb-7 flex gap-3">
                     <i data-lucide="shield-check" class="w-5 h-5 text-emerald-600 flex-shrink-0" aria-hidden="true"></i>
                     <div class="space-y-2 text-sm text-emerald-800">
-                        <p>Save the token once as the private <code>SCHOOLCLOUD_PUBLISH_TOKEN</code> GitHub Actions repository secret. GitHub encrypts it; the token is never written as plaintext to a repository file or website asset. This static website cannot read GitHub secret values back, so the token you connect here is also saved in this browser's storage on this device. Save it once and the dashboard reconnects on its own after a reload, a new tab or the next sign-in.</p>
+                        <p>Save the token once as the private <code>SCHOOLCLOUD_PUBLISH_TOKEN</code> GitHub Actions repository secret. GitHub encrypts it; the token is never written as plaintext to a repository file or website asset. GitHub never lets a static website read that secret back, so the same token is also encrypted with your administrator and master passwords and stored <strong>in the website</strong> (<code>assets/data/publish-token.json</code>) as well as in this browser. Save it once here and any computer or laptop you sign in on reconnects by itself — no pasting the token again.</p>
                         <p class="text-emerald-900/90">Multiple administrators can open Cloud Settings together. When another admin updates GitHub first, safe saves automatically re-read the latest repository version and retry instead of locking the page.</p>
                     </div>
                 </div>
@@ -2089,6 +2089,17 @@
                             </span>
                         </div>
                         <div x-show="!githubAuth.connected" class="space-y-3">
+                            <!-- The website is carrying a token, but this computer could not
+                                 open it — almost always a copy locked with an older password. -->
+                            <div x-show="githubAuth.website.saved || githubAuth.website.status === 'locked'" x-cloak
+                                 class="rounded-lg border border-amber-200 bg-amber-50 p-3 flex gap-2.5">
+                                <i data-lucide="globe-lock" class="w-4 h-4 mt-0.5 text-amber-700 flex-shrink-0" aria-hidden="true"></i>
+                                <p class="text-[11px] leading-relaxed text-amber-900">
+                                    <strong class="block text-xs">This website is storing a publishing token</strong>
+                                    It did not open with the passwords you entered on this computer, so it was probably saved before the last password change.
+                                    Paste a token below and save it again — that re-locks the website copy with your current passwords for every computer.
+                                </p>
+                            </div>
                             <label for="github-token" class="block text-xs font-medium text-slate-600">Fine-grained Personal Access Token</label>
                             <div class="relative">
                                 <input id="github-token" :type="githubAuth.showToken ? 'text' : 'password'" x-model="githubAuth.token"
@@ -2102,6 +2113,17 @@
                                 </button>
                             </div>
                             <p id="github-token-note" class="text-[11px] text-slate-500">On save, the token is encrypted with GitHub's repository public key and stored as a private Actions secret; if that secret already exists it is left unchanged. The token is also saved on this device, so you only paste it once.</p>
+                            <label class="flex items-start gap-2.5 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3 cursor-pointer">
+                                <input id="github-token-website" type="checkbox" x-model="githubAuth.storeOnWebsite"
+                                       @change="rememberWebsiteTokenPreference(githubAuth.storeOnWebsite)"
+                                       class="mt-0.5 h-4 w-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500">
+                                <span class="text-[11px] leading-relaxed text-indigo-900">
+                                    <strong class="block text-xs">Store this token in the website as well</strong>
+                                    The token is encrypted in this browser with your administrator and master passwords and committed to
+                                    <code>assets/data/publish-token.json</code>. Sign in from any other computer and publishing reconnects on its own —
+                                    nothing is kept only in this browser.
+                                </span>
+                            </label>
                             <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600" role="alert"></p>
                             <button type="button" @click="connectGithub()" :disabled="githubAuth.verifying"
                                     class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 focus-ring">
@@ -2113,13 +2135,55 @@
                             <p class="text-sm font-semibold text-emerald-800">
                                 Connected<span x-show="githubAuth.login" x-text="' as ' + githubAuth.login"></span>.
                             </p>
-                            <p class="text-xs text-emerald-700 mt-1">Direct publishing is enabled. This token is saved on this device, so signing out, closing the tab or reopening the dashboard keeps you connected without pasting it again.</p>
+                            <p class="text-xs text-emerald-700 mt-1">Direct publishing is enabled. This token is saved on this device and — once stored below — in the website itself, so signing out, closing the tab, reopening the dashboard or switching to another computer keeps you connected without pasting it again.</p>
                             <p x-show="githubAuth.cloudSecretSaved" class="text-xs text-emerald-700 mt-2">
                                 <span x-text="githubAuth.cloudSecretAlreadySaved ? 'The repository Actions secret already existed and was left unchanged.' : 'The token was saved once as the private GitHub Actions repository secret.'"></span>
                                 GitHub does not let this website read the secret back.
                             </p>
                             <p x-show="!githubAuth.cloudSecretSaved" class="text-xs text-amber-800 mt-2">The token is connected on this device, but GitHub did not confirm the cloud secret. Check Secrets: Read and write permission or retry.</p>
                             <p x-show="githubAuth.error" x-text="githubAuth.error" class="text-sm text-red-600 mt-2" role="alert"></p>
+
+                            <!-- Stored in the website: the encrypted copy that makes the
+                                 token available on every computer, not just this one. -->
+                            <div id="website-token-storage" class="mt-4 rounded-lg border border-emerald-200 bg-white p-3.5">
+                                <div class="flex flex-wrap items-start justify-between gap-2">
+                                    <h4 class="text-xs font-bold text-slate-900 flex items-center gap-2">
+                                        <i data-lucide="globe-lock" class="w-4 h-4" aria-hidden="true"></i> Website token storage
+                                    </h4>
+                                    <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full ring-1"
+                                          :class="websiteTokenStatusClass">
+                                        <i :data-lucide="githubAuth.website.busy ? 'loader-2' : (websiteTokenSaved ? 'badge-check' : 'cloud-off')"
+                                           class="w-3.5 h-3.5" :class="githubAuth.website.busy && 'animate-spin'" aria-hidden="true"></i>
+                                        <span x-text="websiteTokenStatusLabel"></span>
+                                    </span>
+                                </div>
+                                <p class="mt-2 text-[11px] leading-relaxed text-slate-600">
+                                    Saving engraves the token into the website itself: it is encrypted in this browser with your administrator and master
+                                    passwords and committed to <code>assets/data/publish-token.json</code>. Any computer or laptop that signs in as the
+                                    administrator downloads that file and unlocks it automatically, so the token never has to be pasted again.
+                                </p>
+                                <p x-show="githubAuth.website.message" x-text="githubAuth.website.message"
+                                   class="mt-2 text-[11px] font-medium"
+                                   :class="githubAuth.website.status === 'error' ? 'text-rose-700' : (githubAuth.website.status === 'saved' && !githubAuth.website.stale ? 'text-emerald-700' : 'text-amber-800')"></p>
+                                <p x-show="websiteTokenSaved && githubAuth.website.savedAt" class="mt-1 text-[11px] text-slate-500">
+                                    Last stored <span x-text="formatDate(githubAuth.website.savedAt)"></span><span x-show="websiteTokenSlotLabel" x-text="' · opens with the ' + websiteTokenSlotLabel"></span>.
+                                </p>
+                                <div class="flex flex-wrap gap-2 mt-3">
+                                    <button type="button" @click="saveTokenToWebsiteNow()" :disabled="githubAuth.website.busy"
+                                            class="inline-flex items-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 focus-ring">
+                                        <i :data-lucide="githubAuth.website.busy ? 'loader-2' : 'globe'" class="w-4 h-4" :class="githubAuth.website.busy && 'animate-spin'" aria-hidden="true"></i>
+                                        <span x-text="githubAuth.website.busy ? 'Saving…' : (websiteTokenSaved ? 'Save to this website again' : 'Save token to this website')"></span>
+                                    </button>
+                                    <button type="button" x-show="websiteTokenSaved" @click="removeTokenFromWebsite()" :disabled="githubAuth.website.busy"
+                                            class="inline-flex items-center gap-2 border border-slate-300 bg-white text-slate-700 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 focus-ring">
+                                        <i data-lucide="trash-2" class="w-4 h-4" aria-hidden="true"></i> Remove from this website
+                                    </button>
+                                </div>
+                                <p class="mt-3 text-[11px] text-slate-500 flex items-start gap-1.5">
+                                    <i data-lucide="shield-alert" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" aria-hidden="true"></i>
+                                    <span>The stored file is public but holds ciphertext only (AES-256-GCM, PBKDF2-SHA-256). Its safety is the safety of your passwords, so keep the administrator and master passwords long and unique, scope the token to this repository, and revoke it on GitHub if a password ever leaks.</span>
+                                </p>
+                            </div>
                             <button type="button" x-show="!githubAuth.cloudSecretSaved" @click="saveGithubSecret()" :disabled="githubAuth.verifying"
                                     class="mt-3 inline-flex items-center gap-2 border border-emerald-300 bg-white text-emerald-800 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-100 disabled:opacity-50 focus-ring">
                                 <i :data-lucide="githubAuth.verifying ? 'loader-2' : 'cloud-upload'" class="w-4 h-4" :class="githubAuth.verifying && 'animate-spin'" aria-hidden="true"></i>

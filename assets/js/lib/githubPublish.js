@@ -1,4 +1,7 @@
 import { sha256Hex } from './uploadSafety.js';
+import { TOKEN_VAULT_PATH, emptyTokenVault, isTokenVault } from './tokenVault.js';
+
+export { TOKEN_VAULT_PATH };
 
 const API_ROOT = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
@@ -244,6 +247,114 @@ export async function savePublishingTokenToGitHub({ owner, repo, token }) {
   }
 
   return { saved: true, alreadySaved: false, secretName: PUBLISH_TOKEN_SECRET_NAME };
+}
+
+/* ---------------------------------------------------------------------------
+ * Website token vault
+ *
+ * `savePublishingTokenToGitHub` above hands the token to GitHub's write-only
+ * Actions secret store, which this website can never read back. The vault
+ * below is the readable half: the same token, encrypted in the browser with
+ * the administrator's passwords (see lib/tokenVault.js) and committed to the
+ * repository so that GitHub Pages serves it with the site. Any computer the
+ * administrator signs in on can fetch it and decrypt it locally, so the token
+ * is stored "in the website" rather than in one browser.
+ *
+ * Only ciphertext is ever written here. These helpers refuse to commit
+ * anything that is not a valid encrypted vault.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Read the encrypted vault straight from the repository.
+ *
+ * The file is public, so this works without a token — which is the point: a
+ * brand-new device has no credentials yet. A token is used when one is already
+ * connected, purely to get the authenticated API rate limit. A missing or
+ * unrecognisable file is reported as `null` rather than as an error.
+ */
+export async function readTokenVaultFromGitHub({ owner, repo, branch = 'main', token = '' } = {}) {
+  const cleanToken = String(token || '').trim();
+  const query = new URLSearchParams({ ref: branch });
+  const url = apiUrl(owner, repo, `contents/${encodePath(TOKEN_VAULT_PATH)}?${query}`);
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': API_VERSION,
+      ...(cleanToken ? { Authorization: `Bearer ${cleanToken}` } : {})
+    },
+    cache: 'no-store',
+    credentials: 'omit'
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Could not read the stored website token (HTTP ${response.status}).`);
+  const file = await response.json();
+  if (!file?.content) return null;
+  let parsed = null;
+  try {
+    parsed = JSON.parse(decodeBase64Text(file.content));
+  } catch {
+    return null;
+  }
+  return isTokenVault(parsed) ? parsed : null;
+}
+
+/**
+ * Commit the encrypted vault. The plaintext token is only ever used here as
+ * the API credential for the write; what lands in the repository is the
+ * ciphertext the caller prepared.
+ */
+export async function saveTokenVaultToGitHub({ owner, repo, branch = 'main', token, vault }) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Connect a GitHub token before storing it in the website.');
+  if (!isTokenVault(vault)) throw new Error('Refusing to commit a token store that is not encrypted.');
+  const serialized = JSON.stringify(vault);
+  if (serialized.includes(cleanToken)) {
+    throw new Error('Refusing to commit the token in readable form. Nothing was written.');
+  }
+  const result = await updateJson({
+    owner, repo, branch, path: TOKEN_VAULT_PATH, token: cleanToken,
+    message: 'Update the encrypted website publishing token',
+    transform() {
+      return vault;
+    }
+  });
+  return {
+    path: TOKEN_VAULT_PATH,
+    commitUrl: result?.commit?.html_url || '',
+    updatedAt: vault.updatedAt || ''
+  };
+}
+
+/**
+ * Empty the vault without deleting the file, so the website keeps serving a
+ * valid (token-free) record instead of a 404. The previous ciphertext stays in
+ * the Git history, which is why the interface also advises revoking the token
+ * on GitHub when it may have been exposed.
+ */
+export async function clearTokenVaultOnGitHub({ owner, repo, branch = 'main', token }) {
+  const cleanToken = String(token || '').trim();
+  if (!cleanToken) throw new Error('Connect a GitHub token before changing the website token store.');
+  let existing = null;
+  try {
+    existing = await readContents({ owner, repo, branch, path: TOKEN_VAULT_PATH, token: cleanToken });
+  } catch {
+    existing = null;
+  }
+  if (!existing) return { path: TOKEN_VAULT_PATH, cleared: false, missing: true, commitUrl: '' };
+  const blank = emptyTokenVault({ repository: `${owner}/${repo}` });
+  const result = await updateJson({
+    owner, repo, branch, path: TOKEN_VAULT_PATH, token: cleanToken,
+    message: 'Remove the stored website publishing token',
+    transform() {
+      return blank;
+    }
+  });
+  return {
+    path: TOKEN_VAULT_PATH,
+    cleared: true,
+    missing: false,
+    commitUrl: result?.commit?.html_url || ''
+  };
 }
 
 export async function listRepositoryFiles({ owner, repo, branch = 'main' }) {
