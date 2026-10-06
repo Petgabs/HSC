@@ -7,12 +7,12 @@
  * share it with the administrator out of band. Rotate it by generating a fresh
  * salt and recomputing the digest.
  *
- * The `master` block is the master password that unlocks the Administrator
- * account section of Cloud Settings. It is stored exactly the same way — a salt
- * and a digest, never the plain password — and its shipped default is shared
- * with the administrator out of band. Rotating either credential from Cloud
- * Settings commits a new salt and digest into this file on GitHub, so the
- * change reaches every device when GitHub Pages finishes deploying.
+ * The `master` block is the master password required to open Cloud Settings.
+ * It is stored exactly the same way — a salt and a digest, never the plain
+ * password — and its shipped default is shared with the administrator out of
+ * band. Rotating either credential from Cloud Settings commits a new salt and
+ * digest into this file on GitHub, so the change reaches every device when
+ * GitHub Pages finishes deploying.
  *
  * Never put a GitHub token in this file. The administrator pastes a token in
  * Settings; the site encrypts it for a one-time GitHub Actions repository
@@ -60,7 +60,7 @@ export function readAdminGate() {
   return copyGate(SITE_CONFIG.admin);
 }
 
-/** Read the master-password gate protecting the Administrator account section. */
+/** Read the master-password gate protecting Cloud Settings. */
 export function readMasterGate() {
   return copyGate(SITE_CONFIG.master);
 }

@@ -44,7 +44,7 @@ describe('School Cloud release configuration', () => {
     expect(app).not.toContain('refreshCloudQueue');
   });
 
-  it('guards the administrator account section with a master password and commits rotations to GitHub', async () => {
+  it('guards Cloud Settings with a master password and commits credential rotations to GitHub', async () => {
     const [html, app, config, publisher] = await Promise.all([
       read('../index.html'), read('../assets/js/app.js'), read('../assets/js/config.js'),
       read('../assets/js/lib/githubPublish.js')
@@ -54,10 +54,17 @@ describe('School Cloud release configuration', () => {
     expect(config).toMatch(/master:\s*\{/);
     expect(config.match(/passwordHash:\s*'[0-9a-f]{64}'/g)).toHaveLength(2);
     expect(config).not.toMatch(/\bpassword\s*:\s*'/i);
-    // The section is locked until the master password is accepted.
+    // The whole settings page is locked until the master password is accepted,
+    // and every settings entry point goes through that gate.
+    expect(html).toContain('@click="openCloudSettings()"');
+    expect(html).toContain('id="cloud-settings-password-gate"');
+    expect(html).toContain('x-show="adminAccount.unlocked" x-cloak');
+    expect(html).toContain('Unlock Cloud Settings');
     expect(html).toContain('id="admin-account-section"');
     expect(html).toContain('id="master-password"');
     expect(html).toContain('@click="unlockAdminAccount()"');
+    expect(app).toContain('openCloudSettings({ focusAccount = false } = {})');
+    expect(app).toContain("this.$watch('currentView'");
     expect(html).toContain('@click="saveAdminAccount()"');
     expect(html).toContain('@click="lockAdminAccount({ announce: true })"');
     expect(app).toContain('verifyConfiguredMaster');
