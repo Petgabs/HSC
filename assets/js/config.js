@@ -51,7 +51,17 @@ export const SITE_CONFIG = Object.freeze({
     namespace: 'petgabs-hsc-schoolcloud',
     visitorKey: 'visitors'
   }),
-  maxUploadBytes: 50 * 1024 * 1024
+  maxUploadBytes: 50 * 1024 * 1024,
+  // The cloud storage allowance the admin dashboard measures the published
+  // files against. GitHub Pages serves a published site of up to 1 GB, and
+  // GitHub recommends keeping a repository under 1 GB, so that is the default.
+  // Change `quotaBytes` if the school moves to a different hosting plan; a
+  // value of 0 tells the dashboard to report the remaining space as unknown.
+  storage: Object.freeze({
+    quotaBytes: 1_000_000_000,
+    label: 'GitHub Pages allowance',
+    note: 'GitHub Pages publishes a site of up to 1 GB. Files live in the apps/ folder of this repository.'
+  })
 });
 
 function copyGate(gate) {

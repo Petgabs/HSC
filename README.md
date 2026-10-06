@@ -40,6 +40,19 @@ repository; GitHub Pages then makes them available to students.
   within about two minutes". No name, account or device detail is ever sent,
   and the same-device tab/storage layers keep the indicator accurate and
   instant even when the counter service is blocked.
+- Reports **cloud storage** and **administrator activity** on the dashboard.
+  Every published file shows its size and how many days it has been stored in
+  the cloud, and the storage cards total what is used, what is still available
+  and how full the hosting allowance is (`storage.quotaBytes` in
+  `assets/js/config.js`, 1 GB by default because that is GitHub Pages' published
+  site limit). Sign-in statistics cover today, the last 7 days and the last 30
+  days, with the latest sign-in, a 14-day chart, and a list of the latest
+  uploaded files with their sizes. Sign-ins and uploads are recorded in
+  `stats/admin-activity.json`, which travels with the website, so the numbers
+  are the same on every computer; a device that cannot write to GitHub yet
+  keeps its entries queued and shares them as soon as publishing reconnects.
+  No name, device, network or location detail is recorded beyond the
+  administrator username that is already public in `config.js`.
 - Protects every administrator action against repeated clicks. Publish, delete,
   count-sync, settings save, token connect and verification each run at most
   once at a time, and each has its own sliding-window rate limit with a visible
@@ -360,6 +373,44 @@ mixed single-line condition evaluates in a version-dependent order. Download
 URLs are repository-relative (`apps/Name.pdf`) so they resolve under project
 Pages (`/HSC/`), a custom domain, or localhost without a configured `baseurl`.
 
+## Dashboard storage, sign-in statistics and the activity record
+
+The administrator dashboard answers four questions that a static GitHub Pages
+site has no server to compute:
+
+1. **How big is each uploaded file?** The byte count recorded in `library.json`
+   when a file was published is authoritative (the Jekyll-generated `apps.json`
+   carries no size). A file published before byte counts were recorded is
+   measured from GitHub's directory listing by **Refresh file details**, which
+   runs automatically when a size or upload date is missing. A size that no
+   layer can confirm is shown as *Size unknown*, never as zero.
+2. **How much cloud storage is used, and how much is left?** The storage cards
+   add up every published file and compare the total with
+   `SITE_CONFIG.storage.quotaBytes` (1 GB by default — GitHub Pages' published
+   site limit; set it to `0` to hide the remaining figure). The bar turns amber
+   at 70% and red at 90% or over the allowance.
+3. **How many days has each file been stored?** `addedAt` in `library.json`
+   gives the upload date; a file without one has its first commit read from
+   GitHub's commit history, and the result is cached in the browser
+   (`schoolcloud.cloud.file-dates.v1`) so the API is asked once per file.
+4. **How many administrator sign-ins in a day, a week and a month, and what was
+   uploaded last?** Every successful sign-in and every publish appends one
+   entry to `stats/admin-activity.json` through the connected token. The file is
+   public, capped at 400 entries per list, merged by timestamp, and contains
+   only timestamps plus the public administrator username and the upload's
+   metadata — no device, network or personal detail. A device whose token is
+   locked (or not yet connected) keeps its entries in
+   `schoolcloud.admin.activity.pending.v1`, shows them immediately, and pushes
+   them to the shared record as soon as publishing reconnects, so a sign-in is
+   never lost. `stats/admin-activity.json` ships with the upload history of the
+   files currently in `apps/`, and the dashboard falls back to the library's own
+   upload dates if the record is ever empty.
+
+"Today" means the local calendar day on the administrator's own computer. The
+activity record is deliberately not used for security decisions: it is
+audit-style information for the administrator, and signing in is still checked
+by the salted digest in `assets/js/config.js`.
+
 ## Local development
 
 ```sh
@@ -384,12 +435,17 @@ build output so GitHub Pages can serve the site without a build step.
 - `stats/downloads.json` — durable GitHub record of the shared visitor and
   per-file download totals, synchronized automatically by GitHub Actions and
   served to every visitor as the same-origin counter fallback.
+- `stats/admin-activity.json` — durable record of administrator sign-ins and
+  published uploads behind the dashboard's sign-in statistics and latest-upload
+  list. Timestamps, the public administrator username and upload metadata only;
+  written through the connected token and served with the website.
 - `.github/workflows/sync-abacus-stats.yml` — scheduled Abacus-to-GitHub
   snapshot workflow (with a manual workflow-dispatch option).
 - `index.html` — the student library, admin dashboard, upload form, settings
   and preview UI.
-- `assets/js/` — application, Abacus counters, GitHub publishing, token-vault
-  and metadata code. No readable publishing token is stored here.
+- `assets/js/` — application, Abacus counters, GitHub publishing, token-vault,
+  administrator activity (`lib/adminActivity.js`) and metadata code. No readable
+  publishing token is stored here.
 - `assets/data/publish-token.json` — the publishing token encrypted with the
   administrator and master passwords, so any computer the administrator signs
   in on can publish. Ciphertext only; empty until the first token is saved.

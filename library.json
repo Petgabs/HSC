@@ -323,7 +323,8 @@
     "academicYear": "2026",
     "visibility": "public",
     "version": "1.0",
-    "addedAt": "2026-10-06T09:10:47.357Z"
+    "addedAt": "2026-10-06T09:10:47.357Z",
+    "bytes": 6208348
   },
   "apps/Blacktown Boys 2026 w. sol.pdf": {
     "title": "Blacktown Boys 2026 w. sol",
@@ -338,7 +339,8 @@
     "academicYear": "2026",
     "visibility": "public",
     "version": "1.0",
-    "addedAt": "2026-10-06T09:12:00.362Z"
+    "addedAt": "2026-10-06T09:12:00.362Z",
+    "bytes": 892777
   },
   "apps/External Exam Revision-Friday-answers-discussion.pdf": {
     "title": "External Exam Revision Friday answers discussion",

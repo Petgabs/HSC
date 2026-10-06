@@ -1,0 +1,56 @@
+{
+  "_comment": [
+    "Durable record of administrator sign-ins and published uploads.",
+    "Written by the administrator dashboard through the GitHub Contents API and",
+    "served to every device with the website, so sign-in and upload statistics",
+    "survive a cleared browser and appear on any computer.",
+    "Shape: { updatedAt, logins: [{ at, user }], uploads: [{ at, path, name, title, bytes, subject, years, owner }] }.",
+    "Newest first, capped, and merged by timestamp — a repeated save can never",
+    "double-count a sign-in or an upload. No device, network or personal data is",
+    "stored here; the username is already public in assets/js/config.js."
+  ],
+  "updatedAt": "2026-10-06T15:37:13.372Z",
+  "logins": [],
+  "uploads": [
+    {
+      "at": "2026-10-06T15:37:13.372Z",
+      "path": "apps/Answers-Revision-Friday Afternoon.docx",
+      "name": "Answers-Revision-Friday Afternoon.docx",
+      "title": "Answers Revision Friday Afternoon",
+      "bytes": 1120937,
+      "subject": "Mathematics",
+      "years": [12],
+      "owner": "Peter"
+    },
+    {
+      "at": "2026-10-06T11:53:36.888Z",
+      "path": "apps/External Exam Revision-Friday-answers-discussion.pdf",
+      "name": "External Exam Revision-Friday-answers-discussion.pdf",
+      "title": "External Exam Revision Friday answers discussion",
+      "bytes": 3679044,
+      "subject": "Mathematics",
+      "years": [12],
+      "owner": "Peter"
+    },
+    {
+      "at": "2026-10-06T09:12:00.362Z",
+      "path": "apps/Blacktown Boys 2026 w. sol.pdf",
+      "name": "Blacktown Boys 2026 w. sol.pdf",
+      "title": "Blacktown Boys 2026 w. sol",
+      "bytes": 892777,
+      "subject": "Mathematics",
+      "years": [12],
+      "owner": "Peter"
+    },
+    {
+      "at": "2026-10-06T09:10:47.357Z",
+      "path": "apps/Year_12_Mathematics_Advanced_Topic_MCQ_Practice (1).html",
+      "name": "Year_12_Mathematics_Advanced_Topic_MCQ_Practice (1).html",
+      "title": "Year 12 Mathematics Advanced Topic MCQ Practice",
+      "bytes": 6208348,
+      "subject": "Mathematics",
+      "years": [12],
+      "owner": "Peter"
+    }
+  ]
+}

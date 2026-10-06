@@ -14,7 +14,7 @@
  *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.14.0';
+const VERSION = 'v1.15.0';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -38,6 +38,7 @@ const SHELL_ASSETS = [
   './assets/js/lib/metadata.js',
   './assets/js/lib/search.js',
   './assets/js/lib/counters.js',
+  './assets/js/lib/adminActivity.js',
   './assets/js/lib/format.js',
   './assets/js/lib/preview.js',
   './assets/js/lib/githubPublish.js',
@@ -84,6 +85,9 @@ function isLibraryData(url) {
   return url.pathname.endsWith('/apps.json') ||
     url.pathname.endsWith('/library.json') ||
     url.pathname.endsWith('/stats/downloads.json') ||
+    // Administrator sign-in and upload record: always read fresh, because a
+    // just-recorded sign-in must appear without waiting for a cache expiry.
+    url.pathname.endsWith('/stats/admin-activity.json') ||
     // The encrypted administrator token travels with the website. A stale
     // copy would try to unlock a token that has since been rotated, so it is
     // always read from the network first.
