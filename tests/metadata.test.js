@@ -36,4 +36,13 @@ describe('library metadata', () => {
     expect(metadata.get('b.pdf').title).toBe('B');
     expect(metadata.has('_comment')).toBe(false);
   });
+
+  it('returns an empty Map for a missing or malformed library', () => {
+    for (const bad of [null, undefined, 42, 'nope', [], '[]']) {
+      const metadata = metadataFromLibrary(bad);
+      expect(metadata).toBeInstanceOf(Map);
+      expect(metadata.size).toBe(0);
+      expect(metadata.get('apps/a.pdf')).toBeUndefined();
+    }
+  });
 });

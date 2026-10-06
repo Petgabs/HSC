@@ -14,7 +14,7 @@
  *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.8.0';
+const VERSION = 'v1.8.1';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -74,7 +74,9 @@ self.addEventListener('message', event => {
 });
 
 function isLibraryData(url) {
-  return url.pathname.endsWith('/apps.json') || url.pathname.endsWith('/library.json');
+  return url.pathname.endsWith('/apps.json') ||
+    url.pathname.endsWith('/library.json') ||
+    url.pathname.endsWith('/stats/downloads.json');
 }
 
 function isDownloadableFile(url) {

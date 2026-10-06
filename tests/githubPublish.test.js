@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { sanitizeUploadName, uploadResourceToGitHub, verifyGitHubToken } from '../assets/js/lib/githubPublish.js';
+import { sanitizeUploadName, saveDownloadStatsToGitHub, uploadResourceToGitHub, verifyGitHubToken } from '../assets/js/lib/githubPublish.js';
 
 function mockResponse(status, body) {
   return {
@@ -87,5 +87,91 @@ describe('direct GitHub publishing', () => {
       metadata: { title: 'replacement' }
     })).rejects.toThrow('already in apps/');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('download-count record sync', () => {
+  function decodeJsonCall(call) {
+    const request = call[1];
+    const body = JSON.parse(request.body);
+    const decoded = new TextDecoder().decode(Uint8Array.from(atob(body.content), char => char.charCodeAt(0)));
+    return { request, body, record: JSON.parse(decoded) };
+  }
+
+  it('creates the stats record when none exists', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(404, { message: 'Not Found' }))
+      .mockResolvedValueOnce(mockResponse(201, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/stats' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await saveDownloadStatsToGitHub({
+      owner: 'Petgabs', repo: 'HSC', branch: 'main', token: 'secret-token',
+      stats: {
+        namespace: 'petgabs-hsc-schoolcloud', updatedAt: '2026-10-06T05:15:00.000Z', visitors: 41,
+        files: { 'apps/Practice.pdf': { downloads: 8, key: 'download-abc12345' } }
+      }
+    });
+
+    expect(result).toMatchObject({ path: 'stats/downloads.json', fileCount: 1, visitors: 41 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain('/contents/stats/downloads.json');
+    const { request, body, record } = decodeJsonCall(fetchMock.mock.calls[1]);
+    expect(request.method).toBe('PUT');
+    expect(request.headers.Authorization).toBe('Bearer secret-token');
+    expect(body.message).toContain('download counts');
+    expect(body).not.toHaveProperty('sha');
+    expect(body).not.toHaveProperty('token');
+    expect(record).toMatchObject({
+      namespace: 'petgabs-hsc-schoolcloud', visitors: 41, updatedAt: '2026-10-06T05:15:00.000Z'
+    });
+    expect(record.files['apps/Practice.pdf']).toMatchObject({ downloads: 8, key: 'download-abc12345' });
+    expect(record._comment.length).toBeGreaterThan(0);
+  });
+
+  it('merges max-wins and never drags saved totals backwards', async () => {
+    const existing = {
+      _comment: ['keep this comment'],
+      namespace: 'petgabs-hsc-schoolcloud',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      visitors: 50,
+      files: {
+        'apps/Old.pdf': { downloads: 9, key: 'download-aaaaaaaa' },
+        'apps/Stale.pdf': { downloads: 4, key: 'download-cccccccc' }
+      }
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(200, { sha: 'stats-sha', content: base64Json(existing) }))
+      .mockResolvedValueOnce(mockResponse(200, { commit: { html_url: 'https://github.com/Petgabs/HSC/commit/stats2' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await saveDownloadStatsToGitHub({
+      owner: 'Petgabs', repo: 'HSC', token: 'secret-token',
+      stats: {
+        namespace: 'petgabs-hsc-schoolcloud', updatedAt: '2026-10-06T05:15:00.000Z', visitors: 41,
+        files: {
+          'apps/Old.pdf': { downloads: 12, key: 'download-aaaaaaaa' },
+          'apps/New.pdf': { downloads: 7, key: 'download-bbbbbbbb' },
+          '../escape.pdf': { downloads: 999, key: 'download-eeeeeeee' }
+        }
+      }
+    });
+
+    const { body, record } = decodeJsonCall(fetchMock.mock.calls[1]);
+    expect(body.sha).toBe('stats-sha');
+    expect(record._comment).toEqual(['keep this comment']);
+    expect(record.visitors).toBe(50);
+    expect(record.files['apps/Old.pdf']).toMatchObject({ downloads: 12, key: 'download-aaaaaaaa' });
+    expect(record.files['apps/New.pdf']).toMatchObject({ downloads: 7, key: 'download-bbbbbbbb' });
+    expect(record.files['apps/Stale.pdf']).toMatchObject({ downloads: 4 });
+    expect(record.files).not.toHaveProperty('../escape.pdf');
+  });
+
+  it('requires a token and valid existing JSON', async () => {
+    await expect(saveDownloadStatsToGitHub({ owner: 'Petgabs', repo: 'HSC', stats: { files: {} } }))
+      .rejects.toThrow('Connect a GitHub token');
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, { sha: 'x', content: btoa('not json{{{') }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(saveDownloadStatsToGitHub({ owner: 'Petgabs', repo: 'HSC', token: 't', stats: { files: {} } }))
+      .rejects.toThrow('not valid JSON');
   });
 });
