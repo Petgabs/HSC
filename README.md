@@ -18,9 +18,10 @@ repository; GitHub Pages then makes them available to students.
 - Uploads supported files to `apps/` and updates `library.json` with their
   metadata through GitHub's Contents API. New files are not silently allowed to
   overwrite an existing file with the same name.
-- Uses Abacus for one site-visit counter and a separate download counter for
-  every published file. The counter values are fetched without incrementing;
-  a `hit` is sent only when a page is visited or a student clicks Download.
+- Uses Abacus for the site-visit counter and a separate download counter for
+  every published file. Each new browser-tab session sends one visitor `hit`;
+  refreshing the page only reads the existing total. A file `hit` is sent only
+  when a student clicks Download.
 - Keeps a publishing token out of the source and repository. An administrator
   enters it in **Cloud Settings** when ready. It is verified by GitHub and held
   only in application memory in that tab; it is never stored in localStorage,
@@ -83,13 +84,16 @@ completely.
 The client uses the Abacus API at `https://abacus.jasoncameron.dev` with the
 namespace `petgabs-hsc-schoolcloud`:
 
-- Visitor count: `GET /hit/<namespace>/visitors` once per page load.
+- Visitor count: `GET /hit/<namespace>/visitors` once when a tab first visits
+  the site in its browser session. A session-storage marker survives reloads;
+  refreshes and later reads use `GET /get/<namespace>/visitors` and do not
+  increment the total.
 - Per-file count: `GET /get/<namespace>/<stable-file-key>` to display the
   current value and `GET /hit/<namespace>/<stable-file-key>` after a download
-  click. Reads are lazy as cards approach the viewport to avoid requesting
-  every file count on every visit; opening the admin dashboard fetches any
-  counts not already read, and **Refresh Stats** rereads counts in small
-  batches no more often than every 10 seconds, respecting Abacus's rate limit.
+  click. Library cards read lazily as they approach the viewport. Opening the
+  admin dashboard loads any unread counts and refreshes values older than 10
+  seconds; **Refresh Stats** also rereads the visitor total and refreshes
+  per-file counts, with each file read rate-limited to once every 10 seconds.
 
 A counter outage never blocks the library or a file download. The site shows a
 per-browser local fallback and reports when Abacus is unavailable. It does not

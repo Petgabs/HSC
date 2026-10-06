@@ -1,6 +1,6 @@
 import Alpine from '../vendor/alpine.esm.js';
 import { SITE_CONFIG, SUBJECTS, YEAR_LEVELS } from './config.js';
-import { AbacusCounters, downloadCounterKey, readLocalCounter, writeLocalCounter } from './lib/counters.js';
+import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, readLocalCounter, writeLocalCounter } from './lib/counters.js';
 import { deleteResourceFromGitHub, readPublicRepositoryFiles, uploadResourceToGitHub, verifyGitHubToken } from './lib/githubPublish.js';
 import { inferMetadata, isSupportedFile, metadataFromLibrary, normalizeLibraryEntry } from './lib/metadata.js';
 import { searchResources, sortResources } from './lib/search.js';
@@ -247,6 +247,8 @@ function schoolCloud() {
     _toastTimer: null,
     _counterClient: buildCounterClient(),
     _visitorOnline: false,
+    _visitorSessionCounted: false,
+    _visitorCountPromise: null,
     _downloadCountersOnline: false,
     _counterReadStarted: [],
     _counterReadInFlight: [],
@@ -593,24 +595,46 @@ function schoolCloud() {
       }
     },
 
-    async countVisitor() {
+    countVisitor() {
+      if (this._visitorCountPromise) return this._visitorCountPromise;
+      const request = this.updateVisitorCounter();
+      const trackedRequest = request.finally(() => {
+        if (this._visitorCountPromise === trackedRequest) this._visitorCountPromise = null;
+      });
+      this._visitorCountPromise = trackedRequest;
+      return trackedRequest;
+    },
+
+    async updateVisitorCounter() {
       this.stats.loadingVisitors = true;
       const key = SITE_CONFIG.abacus.visitorKey;
+      const sessionHitKey = `${SITE_CONFIG.abacus.namespace}:${key}`;
+      const claimedSessionHit = claimSessionCounterHit(sessionHitKey);
+      const isNewSession = claimedSessionHit === null
+        ? !this._visitorSessionCounted
+        : claimedSessionHit;
+      // Remember the attempt before making a request. A refresh during a slow
+      // response must read the counter, not risk replaying the visitor hit.
+      this._visitorSessionCounted = true;
+      this._visitorOnline = false;
       const local = readLocalCounter(key);
+
       if (!this._counterClient) {
-        this.stats.visitors = writeLocalCounter(key, local + 1);
+        this.stats.visitors = writeLocalCounter(key, isNewSession ? local + 1 : local);
         this.stats.loadingVisitors = false;
-        this._visitorOnline = false;
         this.updateCounterStatus();
         return;
       }
       try {
-        const value = await this._counterClient.hit(key);
-        this.stats.visitors = writeLocalCounter(key, Math.max(local, value));
+        // A reload within the same tab session reads the current total without
+        // incrementing it. Only a newly claimed session sends an Abacus hit.
+        const value = isNewSession
+          ? await this._counterClient.hit(key)
+          : await this._counterClient.get(key);
+        this.stats.visitors = writeLocalCounter(key, value);
         this._visitorOnline = true;
       } catch {
-        this.stats.visitors = writeLocalCounter(key, local + 1);
-        this._visitorOnline = false;
+        this.stats.visitors = writeLocalCounter(key, isNewSession ? local + 1 : local);
       } finally {
         this.stats.loadingVisitors = false;
         this.updateCounterStatus();
@@ -727,7 +751,10 @@ function schoolCloud() {
 
     async refreshStats() {
       if (this.stats.loadingDownloads) return;
-      await this.loadDownloadCounters();
+      await Promise.all([
+        this.countVisitor(),
+        this.loadDownloadCounters(this.apps, true)
+      ]);
       this.stats.updatedAtLabel = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     },
 
@@ -760,7 +787,9 @@ function schoolCloud() {
       if (!this.isAdmin) return;
       this.currentView = 'dashboard';
       this.refreshIcons();
-      if (!this.stats.loadingDownloads) this.loadDownloadCounters(this.apps, false);
+      // The dashboard is a reporting view: refresh stale per-file values from
+      // Abacus instead of only loading counters not seen on the student page.
+      if (!this.stats.loadingDownloads) this.loadDownloadCounters(this.apps, true);
     },
     openUpload() {
       if (!this.isAdmin) return this.openLogin('admin');
