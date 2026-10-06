@@ -325,20 +325,5 @@
     "visibility": "public",
     "version": "1.0",
     "addedAt": "2026-10-06T04:08:37.829Z"
-  },
-  "apps/Killara 2026 w. sol.pdf": {
-    "title": "Killara 2026 w. sol",
-    "subject": "Mathematics",
-    "years": [
-      11
-    ],
-    "tags": [],
-    "keywords": [],
-    "language": "English",
-    "owner": "Peter",
-    "academicYear": "2026",
-    "visibility": "public",
-    "version": "1.0",
-    "addedAt": "2026-10-06T06:02:06.165Z"
   }
 }
