@@ -1,0 +1,48 @@
+name: Sync Abacus counters to GitHub
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/**'
+      - 'assets/js/config.js'
+      - 'assets/js/lib/counters.js'
+      - 'apps.json'
+      - 'library.json'
+      - 'stats/downloads.json'
+      - 'scripts/sync-abacus-stats.mjs'
+      - '.github/workflows/sync-abacus-stats.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: abacus-counter-snapshot
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the published site
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Save live Abacus totals to the repository
+        run: node scripts/sync-abacus-stats.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: main

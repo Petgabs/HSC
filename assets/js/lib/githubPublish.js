@@ -275,17 +275,17 @@ export async function readPublicRepositoryFiles({ owner, repo, branch = 'main' }
 
 /**
  * Persist the shared download-count record (`stats/downloads.json`) to the
- * repository. The merge is max-wins per file and for the visitor total, so a
- * sync from a browser that could not reach Abacus can never drag the saved
- * totals backwards. Entries for files that no longer exist are kept, because
- * a file can be temporarily absent from a manifest while a Pages deployment
- * is still rolling out; stale entries are harmless and can be pruned by hand.
+ * repository. Used by the admin's immediate sync and the scheduled GitHub
+ * Actions job. The merge is max-wins per file and for visitors, so an
+ * unreachable Abacus read can never drag saved totals backwards. Entries for
+ * files that no longer exist are retained because they may still be rolling
+ * out through a Pages deployment.
  */
 export const DOWNLOAD_STATS_PATH = 'stats/downloads.json';
 
 const DOWNLOAD_STATS_COMMENT = [
   'Durable record of the shared Abacus download counters.',
-  'Written by the admin dashboard ("Save counts to GitHub") and served to',
+  'Written by the GitHub Actions sync and the admin dashboard, then served to',
   'every visitor as a same-origin fallback when Abacus is unreachable.',
   'Shape: { namespace, updatedAt, visitors, files: { "apps/Name.pdf": { downloads, key } } }.',
   'Counts only ever move upwards here: each sync keeps the larger of the',

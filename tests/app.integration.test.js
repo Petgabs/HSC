@@ -35,10 +35,19 @@ describe('School Cloud page integration', () => {
       'apps/Year 12 algebra.html': { title: 'Interactive Algebra', subject: 'Mathematics', years: [12], tags: ['practice'] },
       'apps/HSC revision.pdf': { title: 'HSC Revision Notes', subject: 'Mathematics', years: [12] }
     };
-    const fetchMock = vi.fn(async input => {
+    let savedStatsRecord = null;
+    const fetchMock = vi.fn(async (input, init = {}) => {
       const url = String(input);
       if (url.includes('apps.json')) return jsonResponse(manifest);
       if (url.includes('library.json')) return jsonResponse(library);
+      if (url.includes('/contents/stats/downloads.json')) {
+        if (init.method === 'PUT') {
+          const body = JSON.parse(init.body);
+          savedStatsRecord = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(body.content), char => char.charCodeAt(0))));
+          return jsonResponse({ commit: { html_url: 'https://github.com/Petgabs/HSC/commit/stats' } }, 201);
+        }
+        return jsonResponse({ message: 'Not Found' }, 404);
+      }
       if (url.includes('/hit/')) return jsonResponse({ value: url.includes('download-') ? 8 : 41 });
       if (url.includes('/get/')) return jsonResponse({ value: url.includes('download-') ? 7 : 41 });
       return jsonResponse([]);
@@ -92,6 +101,15 @@ describe('School Cloud page integration', () => {
       expect(visitorHits()).toHaveLength(1);
       expect(visitorReads()).toHaveLength(1);
       expect(state.stats.visitors).toBe(41);
+
+      // An immediate GitHub save refreshes the visitor total as well as file counts.
+      state.isAdmin = true;
+      state.githubAuth.connected = true;
+      state.githubAuth.activeToken = 'admin-token-for-test';
+      await state.syncDownloadStatsToGitHub();
+      expect(visitorReads()).toHaveLength(2);
+      expect(savedStatsRecord.visitors).toBe(41);
+      expect(savedStatsRecord.files['apps/Year 12 algebra.html'].downloads).toBe(7);
     } finally {
       // Allow Alpine's x-transition cleanup timers to settle before JSDOM tears
       // down the globals used by its MutationObserver callbacks.

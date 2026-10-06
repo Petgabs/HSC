@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from '../assets/js/lib/counters.js';
+import { collectAbacusSnapshot, listTrackedAppPaths, snapshotHasChanges } from '../scripts/sync-abacus-stats.mjs';
 
 describe('Abacus counters', () => {
   beforeEach(() => vi.restoreAllMocks());
@@ -40,7 +41,8 @@ describe('Abacus counters', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe('https://abacus.jasoncameron.dev/get/school-cloud/visitors');
     expect(fetchImpl.mock.calls[1][0]).toBe('https://abacus.jasoncameron.dev/hit/school-cloud/visitors');
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(fetchImpl.mock.calls[0][1]).toMatchObject({ cache: 'no-store', credentials: 'omit' });
+    expect(fetchImpl.mock.calls[0][1]).toMatchObject({ cache: 'no-store', credentials: 'omit', keepalive: false });
+    expect(fetchImpl.mock.calls[1][1]).toMatchObject({ cache: 'no-store', credentials: 'omit', keepalive: true });
   });
 
   it('treats a missing counter as zero without incrementing it', async () => {
@@ -68,6 +70,67 @@ describe('Abacus counters', () => {
     expect(writeLocalCounter('visitors', 6, storage)).toBe(6);
     expect(readLocalCounter('visitors', storage)).toBe(6);
     expect(writeLocalCounter('visitors', -2, storage)).toBe(0);
+  });
+});
+
+describe('automatic Abacus-to-GitHub snapshots', () => {
+  it('discovers supported, top-level files from the published apps directory', () => {
+    const paths = listTrackedAppPaths();
+    expect(paths).toContain('apps/Sydney Girls 2026 w. sol.pdf');
+    expect(paths.every(path => /^apps\/[^/]+\.(?:html?|pdf|docx?|xlsx?|pptx?)$/i.test(path))).toBe(true);
+  });
+
+  it('snapshots the visitor and each file total, preserving saved values on read failure', async () => {
+    const previous = {
+      namespace: 'petgabs-hsc-schoolcloud',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      visitors: 40,
+      files: {
+        'apps/Practice.pdf': { downloads: 8, key: downloadCounterKey('apps/Practice.pdf') }
+      }
+    };
+    const counters = {
+      get: vi.fn()
+        .mockResolvedValueOnce(41)
+        .mockResolvedValueOnce(9)
+        .mockRejectedValueOnce(new Error('offline'))
+    };
+    const onReadError = vi.fn();
+    const snapshot = await collectAbacusSnapshot({
+      paths: ['apps/Practice.pdf', 'apps/New worksheet.pdf'],
+      counters,
+      previousRecord: previous,
+      requestIntervalMs: 0,
+      onReadError
+    });
+
+    expect(snapshot).toMatchObject({ visitors: 41, namespace: 'petgabs-hsc-schoolcloud' });
+    expect(snapshot.files['apps/Practice.pdf']).toMatchObject({ downloads: 9 });
+    expect(snapshot.files['apps/New worksheet.pdf']).toMatchObject({ downloads: 0 });
+    expect(counters.get.mock.calls.map(([key]) => key)).toEqual([
+      'visitors',
+      downloadCounterKey('apps/Practice.pdf'),
+      downloadCounterKey('apps/New worksheet.pdf')
+    ]);
+    expect(onReadError).toHaveBeenCalledTimes(1);
+    expect(snapshotHasChanges(previous, snapshot)).toBe(true);
+  });
+
+  it('does not write another cloud commit when totals have not changed', async () => {
+    const previous = {
+      namespace: 'petgabs-hsc-schoolcloud',
+      visitors: 4,
+      files: {
+        'apps/Practice.pdf': { downloads: 2, key: downloadCounterKey('apps/Practice.pdf') }
+      }
+    };
+    const snapshot = await collectAbacusSnapshot({
+      paths: ['apps/Practice.pdf'],
+      counters: { get: vi.fn().mockResolvedValueOnce(4).mockResolvedValueOnce(2) },
+      previousRecord: previous,
+      requestIntervalMs: 0
+    });
+    expect(snapshotHasChanges(previous, snapshot)).toBe(false);
   });
 });
 

@@ -102,6 +102,9 @@ export class AbacusCounters {
         method: 'GET',
         cache: 'no-store',
         credentials: 'omit',
+        // A hit changes shared state. Let the browser finish that tiny GET if
+        // the page is closed immediately after the click.
+        keepalive: operation === 'hit',
         headers: { Accept: 'application/json' },
         signal: controller.signal
       });

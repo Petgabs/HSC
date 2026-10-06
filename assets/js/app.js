@@ -829,10 +829,13 @@ function schoolCloud() {
       if (this.statsSyncing) return;
       this.statsSyncing = true;
       try {
-        // Refresh live Abacus totals first so the record captures the newest
-        // shared values. Reads are best-effort; the save merges max-wins, so
-        // an unreachable Abacus can never drag the record backwards.
-        await this.loadDownloadCounters(this.apps, true);
+        // Refresh both the site-wide visitor total and per-file totals before
+        // saving. Reads are best-effort; the save merges max-wins, so an
+        // unreachable Abacus can never drag the GitHub record backwards.
+        await Promise.all([
+          this.countVisitor(),
+          this.loadDownloadCounters(this.apps, true)
+        ]);
         const files = {};
         for (const item of this.apps) {
           files[item.path] = {
