@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Encrypted GitHub publishing token for the School Cloud administrator.",
+    "This file is public. It holds ciphertext only — never a usable token.",
+    "The token is sealed with AES-256-GCM; the data key is wrapped separately",
+    "for the administrator sign-in password and for the master password using",
+    "PBKDF2-HMAC-SHA-256 with a random per-slot salt.",
+    "Signing in on any computer unlocks it in the browser, so the administrator",
+    "never has to paste the token again. Rotating a password re-locks this file.",
+    "Delete the slots (or press \"Remove from this website\" in Cloud Settings) to",
+    "stop sharing the token, and revoke the token on GitHub if a password leaks.",
+    "No token has been stored yet: `token` is null and `slots` is empty.",
+    "Cloud Settings fills both in the first time an administrator saves a token."
+  ],
+  "version": 1,
+  "updatedAt": "",
+  "repository": "Petgabs/HSC",
+  "cipher": "AES-GCM",
+  "kdf": {
+    "name": "PBKDF2",
+    "hash": "SHA-256",
+    "iterations": 310000
+  },
+  "token": null,
+  "slots": {}
+}

@@ -14,7 +14,7 @@
  *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.12.0';
+const VERSION = 'v1.13.0';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -44,6 +44,7 @@ const SHELL_ASSETS = [
   './assets/js/lib/guard.js',
   './assets/js/lib/presence.js',
   './assets/js/lib/uploadSafety.js',
+  './assets/js/lib/tokenVault.js',
   './assets/vendor/alpine.esm.js',
   './assets/vendor/lucide.min.js',
   './assets/vendor/libsodium-wrappers.mjs',
@@ -81,7 +82,11 @@ self.addEventListener('message', event => {
 function isLibraryData(url) {
   return url.pathname.endsWith('/apps.json') ||
     url.pathname.endsWith('/library.json') ||
-    url.pathname.endsWith('/stats/downloads.json');
+    url.pathname.endsWith('/stats/downloads.json') ||
+    // The encrypted administrator token travels with the website. A stale
+    // copy would try to unlock a token that has since been rotated, so it is
+    // always read from the network first.
+    url.pathname.endsWith('/assets/data/publish-token.json');
 }
 
 function isDownloadableFile(url) {
@@ -177,9 +182,9 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(request.url);
 
-  // Never cache counters or GitHub API traffic. Plaintext access tokens are
-  // never read from or written to repository files, and GitHub Actions secret
-  // traffic is network-only as well.
+  // Never cache counters or GitHub API traffic. A plaintext access token is
+  // never read from or written to a repository file — the website copy is
+  // encrypted — and GitHub Actions secret traffic is network-only as well.
   if (url.hostname.includes('abacus') || url.hostname === 'api.github.com') return;
 
   // Cross-origin requests (including the Office viewer) go straight to the
