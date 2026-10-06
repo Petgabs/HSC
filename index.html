@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.1</span>
+                        <span class="ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.8.2</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -695,7 +695,7 @@
                         <i :data-lucide="statsSyncing ? 'loader-2' : 'cloud-upload'" class="h-3.5 w-3.5" :class="statsSyncing && 'animate-spin'" aria-hidden="true"></i>
                         <span x-text="statsSyncing ? 'Saving…' : 'Save counts to GitHub'"></span>
                     </button>
-                    <span class="text-xs opacity-80">Stores the current visitor and download totals in <code>stats/downloads.json</code> so every visitor sees them even when Abacus is blocked. Requires a GitHub token in Settings.</span>
+                    <span class="text-xs opacity-80">GitHub Actions also saves the shared visitor and download totals automatically every 15 minutes. This button runs an immediate admin sync and requires a GitHub token in Settings.</span>
                 </div>
             </div>
 
@@ -2191,7 +2191,7 @@
                         <h3 id="abacus-heading" class="text-sm font-bold text-slate-900 flex items-center gap-2 mb-2">
                             <i data-lucide="chart-no-axes-combined" class="w-4 h-4" aria-hidden="true"></i> Abacus counters
                         </h3>
-                        <p class="text-xs text-slate-500">The site visitor total and every file's individual download total are counted live by Abacus. The dashboard's "Save counts to GitHub" stores those totals in <code>stats/downloads.json</code>, which every visitor loads from this same website as a fallback when Abacus is unreachable. When both are unavailable, this browser shows a local fallback until the next successful refresh.</p>
+                        <p class="text-xs text-slate-500">The site visitor total and each file's download total are counted live by Abacus. GitHub Actions automatically snapshots both totals to <code>stats/downloads.json</code> every 15 minutes and when published files change; no visitor token is needed. The dashboard button can also save an immediate snapshot using the connected admin token. If Abacus is unreachable, the site uses the GitHub record, then this browser's local fallback.</p>
                         <p class="mt-2 text-xs text-slate-500">Counter service: <code>abacus.jasoncameron.dev</code> · Namespace: <code>petgabs-hsc-schoolcloud</code></p>
                     </section>
 

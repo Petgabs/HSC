@@ -1,11 +1,11 @@
 {
   "_comment": [
     "Durable record of the shared Abacus download counters.",
-    "Written by the admin dashboard (\"Save counts to GitHub\") and served to",
-    "every visitor as a same-origin fallback when Abacus is unreachable.",
+    "Automatically synchronized by GitHub Actions and served to every visitor",
+    "as a same-origin fallback when Abacus is unreachable.",
     "Shape: { namespace, updatedAt, visitors, files: { \"apps/Name.pdf\": { downloads, key } } }.",
-    "Counts only ever move upwards here: each sync keeps the larger of the",
-    "saved value and the live value. Entries for deleted files may be removed."
+    "Counts only ever move upwards: syncs keep the larger of the saved and",
+    "live Abacus values. Entries for removed files are retained."
   ],
   "namespace": "petgabs-hsc-schoolcloud",
   "updatedAt": "2026-10-06T05:15:00.000Z",

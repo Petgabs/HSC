@@ -62,14 +62,21 @@ describe('School Cloud release configuration', () => {
     expect(worker).toContain('/stats/downloads.json');
   });
 
-  it('wires the dashboard GitHub count sync and keeps one release version', async () => {
-    const [html, app, pkg, worker] = await Promise.all([
-      read('../index.html'), read('../assets/js/app.js'), read('../package.json'), read('../sw.js')
+  it('wires automatic GitHub counter snapshots, the admin sync, and one release version', async () => {
+    const [html, app, pkg, worker, workflow, syncScript] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../package.json'), read('../sw.js'),
+      read('../.github/workflows/sync-abacus-stats.yml'), read('../scripts/sync-abacus-stats.mjs')
     ]);
     expect(html).toContain('@click="syncDownloadStatsToGitHub()"');
     expect(html).toContain('Save counts to GitHub');
+    expect(html).toContain('automatically every 15 minutes');
     expect(app).toContain('async syncDownloadStatsToGitHub()');
     expect(app).toContain('saveDownloadStatsToGitHub');
+    expect(workflow).toContain("cron: '*/15 * * * *'");
+    expect(workflow).toContain('contents: write');
+    expect(workflow).toContain('GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}');
+    expect(syncScript).toContain('collectAbacusSnapshot');
+    expect(syncScript).toContain('saveDownloadStatsToGitHub');
     const version = JSON.parse(pkg).version;
     expect(html).toContain(`>v${version}<`);
     expect(worker).toContain(`VERSION = 'v${version}'`);
