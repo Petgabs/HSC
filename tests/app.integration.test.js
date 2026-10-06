@@ -145,6 +145,10 @@ describe('School Cloud page integration', () => {
       expect(state.githubAuth.token).toBe('');
       expect(window.localStorage.getItem('githubToken')).toBeNull();
       expect(window.sessionStorage.getItem('schoolcloud.githubToken')).toBeNull();
+      // The verified token is remembered on this device so the administrator
+      // only ever pastes it once.
+      expect(window.localStorage.getItem('schoolcloud.github.token.v1')).toBe('one-time-admin-token');
+      expect(state.githubAuth.remembered).toBe(true);
       expect(publisherSecretPutCount).toBe(1);
       const savedSecretCall = fetchMock.mock.calls.find(([url, init]) =>
         String(url).includes('/actions/secrets/SCHOOLCLOUD_PUBLISH_TOKEN') && init?.method === 'PUT');
@@ -157,6 +161,122 @@ describe('School Cloud page integration', () => {
     } finally {
       // Allow Alpine's x-transition cleanup timers to settle before JSDOM tears
       // down the globals used by its MutationObserver callbacks.
+      await new Promise(resolve => setTimeout(resolve, 200));
+      window.Alpine?.destroyTree?.(window.document.body);
+      window.close();
+    }
+  });
+
+  it('remembers the verified token on the device across reloads and sign-out', async () => {
+    const savedToken = 'remembered-admin-token';
+    const dom = new JSDOM(html, {
+      url: 'https://schoolcloud.example.test/',
+      runScripts: 'outside-only',
+      pretendToBeVisual: true
+    });
+    const { window } = dom;
+    window.HTMLAnchorElement.prototype.click = vi.fn();
+    // A previous session saved the token; the old per-tab keys are stale.
+    window.localStorage.setItem('schoolcloud.github.token.v1', savedToken);
+    window.localStorage.setItem('githubToken', 'stale-token-for-test-only');
+    window.sessionStorage.setItem('schoolcloud.githubToken', 'stale-token-for-test-only');
+
+    let repoStatus = 200;
+    const fetchMock = vi.fn(async input => {
+      const url = String(input);
+      if (url === 'https://api.github.com/repos/Petgabs/HSC') {
+        if (repoStatus !== 200) return jsonResponse({ message: 'Bad credentials' }, repoStatus);
+        return jsonResponse({ full_name: 'Petgabs/HSC', permissions: { push: true } });
+      }
+      if (url.includes('apps.json')) return jsonResponse([]);
+      if (url.includes('library.json')) return jsonResponse({});
+      if (url.includes('/hit/')) return jsonResponse({ value: 1 });
+      if (url.includes('/get/')) return jsonResponse({ value: 1 });
+      return jsonResponse([]);
+    });
+    for (const [key, value] of Object.entries({
+      window,
+      document: window.document,
+      navigator: window.navigator,
+      location: window.location,
+      localStorage: window.localStorage,
+      sessionStorage: window.sessionStorage,
+      MutationObserver: window.MutationObserver,
+      Element: window.Element,
+      ShadowRoot: window.ShadowRoot,
+      CustomEvent: window.CustomEvent,
+      HTMLElement: window.HTMLElement,
+      Node: window.Node,
+      Event: window.Event,
+      URL: window.URL,
+      getComputedStyle: window.getComputedStyle.bind(window),
+      fetch: fetchMock,
+      requestAnimationFrame: callback => window.setTimeout(callback, 0)
+    })) vi.stubGlobal(key, value);
+    window.fetch = fetchMock;
+
+    try {
+      await import('../assets/js/app.js');
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const state = window.document.body._x_dataStack?.[0];
+      const repoCalls = () => fetchMock.mock.calls.filter(([url]) => String(url) === 'https://api.github.com/repos/Petgabs/HSC');
+
+      // Boot restores the saved token without needing the sign-in form, and
+      // the stale per-tab keys stay purged.
+      expect(state).toBeTruthy();
+      expect(window.localStorage.getItem('githubToken')).toBeNull();
+      expect(window.sessionStorage.getItem('schoolcloud.githubToken')).toBeNull();
+      expect(window.localStorage.getItem('schoolcloud.github.token.v1')).toBe(savedToken);
+      expect(state.githubAuth.activeToken).toBe(savedToken);
+      expect(state.githubAuth.connected).toBe(true);
+      expect(state.githubAuth.remembered).toBe(true);
+      // A public visitor never sends the remembered token to GitHub.
+      expect(repoCalls()).toHaveLength(0);
+
+      // The next administrator sign-in silently re-checks the saved token.
+      state.isAdmin = true;
+      await state.verifySavedGithubToken();
+      expect(repoCalls()).toHaveLength(1);
+      expect(state.githubAuth.connected).toBe(true);
+      expect(state.githubAuth.error).toBe('');
+
+      // Signing out ends the session but keeps the token saved on the device.
+      state.logout();
+      expect(state.githubAuth.activeToken).toBe('');
+      expect(state.githubAuth.connected).toBe(false);
+      expect(state.githubAuth.remembered).toBe(true);
+      expect(window.localStorage.getItem('schoolcloud.github.token.v1')).toBe(savedToken);
+      expect(state.isAdmin).toBe(false);
+
+      // Signing back in reconnects automatically, with no pasting.
+      state.isAdmin = true;
+      expect(state.restoreSavedGithubToken()).toBe(true);
+      expect(state.githubAuth.activeToken).toBe(savedToken);
+      expect(state.githubAuth.connected).toBe(true);
+
+      // A network or rate-limit failure must not discard the saved token.
+      repoStatus = 503;
+      await state.verifySavedGithubToken();
+      expect(window.localStorage.getItem('schoolcloud.github.token.v1')).toBe(savedToken);
+      expect(state.githubAuth.remembered).toBe(true);
+      expect(state.githubAuth.error).not.toBe('');
+
+      // A credential GitHub rejects is forgotten so a replacement is requested.
+      repoStatus = 401;
+      await state.verifySavedGithubToken();
+      expect(window.localStorage.getItem('schoolcloud.github.token.v1')).toBeNull();
+      expect(state.githubAuth.activeToken).toBe('');
+      expect(state.githubAuth.connected).toBe(false);
+      expect(state.githubAuth.remembered).toBe(false);
+      expect(state.githubAuth.error).toContain('replacement token');
+
+      // Re-saving and choosing "Forget token on this device" clears storage.
+      state.rememberGithubToken(savedToken);
+      expect(window.localStorage.getItem('schoolcloud.github.token.v1')).toBe(savedToken);
+      state.disconnectGithub();
+      expect(window.localStorage.getItem('schoolcloud.github.token.v1')).toBeNull();
+      expect(state.githubAuth.remembered).toBe(false);
+    } finally {
       await new Promise(resolve => setTimeout(resolve, 200));
       window.Alpine?.destroyTree?.(window.document.body);
       window.close();

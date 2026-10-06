@@ -17,6 +17,10 @@ const LEGACY_TOKEN_KEYS = [
   'github-token', 'hsc.github.token', 'cloudToken'
 ];
 const ADMIN_LOGIN_SESSION_KEY = 'schoolcloud.admin.signed-in.v1';
+// The verified administrator token is remembered on this device so the
+// dashboard never asks for it twice. It survives sign-out, reloads and new
+// tabs; "Forget token on this device" (or Clear local settings) removes it.
+const SAVED_TOKEN_STORAGE_KEY = 'schoolcloud.github.token.v1';
 const VALID_YEAR_LEVELS = new Set(YEAR_LEVELS.map(String));
 const MAX_DESCRIPTION_LENGTH = 3000;
 
@@ -44,6 +48,14 @@ function emptyIntegrityReport() {
 
 function safeStorageRemove(storage, key) {
   try { storage?.removeItem(key); } catch { /* Storage can be disabled. */ }
+}
+
+function safeStorageGet(storage, key) {
+  try { return storage?.getItem(key) ?? null; } catch { return null; }
+}
+
+function safeStorageSet(storage, key, value) {
+  try { storage?.setItem(key, value); return true; } catch { return false; }
 }
 
 function isTransientNetworkError(error) {
@@ -212,6 +224,7 @@ function schoolCloud() {
       verifying: false,
       cloudSecretSaved: false,
       cloudSecretAlreadySaved: false,
+      remembered: false,
       error: ''
     },
     syncing: false,
@@ -521,6 +534,9 @@ function schoolCloud() {
       this.githubAuth.token = '';
       this.githubAuth.activeToken = '';
       this.githubAuth.connected = false;
+      // Reconnect the token this device remembered, so an administrator who
+      // saved it once never has to paste it again on this browser.
+      this.restoreSavedGithubToken();
       this.offline = !navigator.onLine;
       window.addEventListener('online', () => { this.offline = false; this.loadLibrary(); });
       window.addEventListener('offline', () => { this.offline = true; });
@@ -536,9 +552,79 @@ function schoolCloud() {
         safeStorageRemove(globalThis.sessionStorage, key);
         safeStorageRemove(globalThis.localStorage, key);
       }
-      // The current token is intentionally never restored from browser storage.
+      // The legacy keys above are never read back. The current token is
+      // remembered under SAVED_TOKEN_STORAGE_KEY and restored by
+      // restoreSavedGithubToken(), so it survives sign-out and reloads.
       this.githubAuth.token = '';
       this.githubAuth.activeToken = '';
+    },
+
+    readSavedGithubToken() {
+      return String(safeStorageGet(globalThis.localStorage, SAVED_TOKEN_STORAGE_KEY) || '').trim();
+    },
+
+    rememberGithubToken(token) {
+      const clean = String(token || '').trim();
+      if (!clean) return false;
+      const stored = safeStorageSet(globalThis.localStorage, SAVED_TOKEN_STORAGE_KEY, clean);
+      this.githubAuth.remembered = stored;
+      return stored;
+    },
+
+    forgetSavedGithubToken() {
+      safeStorageRemove(globalThis.localStorage, SAVED_TOKEN_STORAGE_KEY);
+      this.githubAuth.remembered = false;
+    },
+
+    /**
+     * Restore the token this device remembered. The credential is held in
+     * browser storage only; it is never written to a repository file, and
+     * GitHub never returns the encrypted Actions secret to the website.
+     */
+    restoreSavedGithubToken() {
+      const saved = this.readSavedGithubToken();
+      if (!saved) {
+        this.githubAuth.remembered = false;
+        return false;
+      }
+      this.githubAuth.activeToken = saved;
+      this.githubAuth.connected = true;
+      this.githubAuth.remembered = true;
+      return true;
+    },
+
+    /**
+     * Re-check a remembered token after sign-in. Only a credential GitHub
+     * rejects (HTTP 401) is forgotten; an offline or rate-limited check leaves
+     * the saved token in place for the next attempt.
+     */
+    async verifySavedGithubToken() {
+      if (!this.isAdmin) return;
+      const token = String(this.githubAuth.activeToken || '').trim();
+      if (!token || this.githubAuth.verifying) return;
+      this.githubAuth.verifying = true;
+      try {
+        const target = this.repositoryTarget;
+        const result = await verifyGitHubToken({ token, owner: target.owner, repo: target.name });
+        if (this.githubAuth.activeToken !== token) return;
+        this.githubAuth.connected = true;
+        this.githubAuth.login = result.login;
+        this.githubAuth.error = '';
+      } catch (error) {
+        if (this.githubAuth.activeToken !== token) return;
+        if (error?.status === 401) {
+          this.forgetSavedGithubToken();
+          this.githubAuth.activeToken = '';
+          this.githubAuth.connected = false;
+          this.githubAuth.error = 'The GitHub token saved on this device was rejected. Paste a replacement token and connect again.';
+          this.notify(this.githubAuth.error, 'error');
+        } else {
+          this.githubAuth.error = error?.message || 'The saved GitHub token could not be checked.';
+        }
+      } finally {
+        this.githubAuth.verifying = false;
+        this.refreshIcons();
+      }
     },
 
     loadSavedRepoSettings() {
@@ -957,6 +1043,9 @@ function schoolCloud() {
         }
         this.isAdmin = true;
         try { sessionStorage.setItem(ADMIN_LOGIN_SESSION_KEY, SITE_CONFIG.admin.username); } catch { /* Current tab stays signed in. */ }
+        // Reconnect the token saved on this device (and quietly re-check it)
+        // so returning administrators start ready to publish.
+        if (this.restoreSavedGithubToken()) this.verifySavedGithubToken();
         this.showLogin = false;
         this.loginForm.password = '';
         this.openDashboard();
@@ -977,9 +1066,17 @@ function schoolCloud() {
       this.githubAuth.error = '';
       this.loginForm.password = '';
       safeStorageRemove(globalThis.sessionStorage, ADMIN_LOGIN_SESSION_KEY);
+      // Signing out ends this session but keeps the remembered token saved on
+      // this device, so the next sign-in reconnects without pasting it again.
+      this.githubAuth.remembered = Boolean(this.readSavedGithubToken());
       this.currentView = 'library';
       this.showLogin = false;
-      this.notify('You have signed out. The GitHub token was cleared from this tab; the repository Actions secret remains in GitHub.', 'success');
+      this.notify(
+        this.githubAuth.remembered
+          ? 'You have signed out. The GitHub token stays saved on this device and reconnects the next time you sign in.'
+          : 'You have signed out. The repository Actions secret remains in GitHub.',
+        'success'
+      );
     },
 
     focusLibrarySearch() {
@@ -1327,6 +1424,9 @@ function schoolCloud() {
       this.githubConfig.branch = this.githubConfig.branch || SITE_CONFIG.repository.branch;
       try { localStorage.setItem('schoolcloud.repository', this.githubConfig.repo); } catch { /* Browser-only convenience. */ }
       await this.loadLibrary();
+      // A token remembered for the previous repository is re-checked against
+      // the newly saved one so the Connected state stays truthful.
+      if (this.githubAuth.connected && this.githubAuth.activeToken) this.verifySavedGithubToken();
       this.notify('Repository settings saved and the published library refreshed.', this.errors.library ? 'error' : 'success');
     },
     async connectGithub() {
@@ -1347,21 +1447,25 @@ function schoolCloud() {
         this.githubAuth.connected = true;
         this.githubAuth.login = result.login;
         this.githubAuth.error = '';
+        const remembered = this.rememberGithubToken(token);
+        const rememberNote = remembered
+          ? ' The token is saved on this device, so you will not need to paste it again.'
+          : '';
         try {
           const cloudSave = await savePublishingTokenToGitHub({ token, owner: target.owner, repo: target.name });
           this.githubAuth.cloudSecretSaved = true;
           this.githubAuth.cloudSecretAlreadySaved = cloudSave.alreadySaved;
           this.notify(
             cloudSave.alreadySaved
-              ? `Connected to ${result.repository}. Its ${cloudSave.secretName} Actions secret already exists and was left unchanged.`
-              : `Connected to ${result.repository}. The token was encrypted and saved once as a GitHub Actions secret.`,
+              ? `Connected to ${result.repository}. Its ${cloudSave.secretName} Actions secret already exists and was left unchanged.${rememberNote}`
+              : `Connected to ${result.repository}. The token was encrypted and saved once as a GitHub Actions secret.${rememberNote}`,
             'success'
           );
         } catch (error) {
           this.githubAuth.cloudSecretSaved = false;
           this.githubAuth.cloudSecretAlreadySaved = false;
-          this.githubAuth.error = error?.message || 'The token works for this tab, but it could not be saved as a GitHub Actions secret.';
-          this.notify(`Connected for this tab, but the GitHub cloud save failed: ${this.githubAuth.error}`, 'error');
+          this.githubAuth.error = error?.message || 'The token is connected on this device, but it could not be saved as a GitHub Actions secret.';
+          this.notify(`Connected on this device, but the GitHub cloud save failed: ${this.githubAuth.error}`, 'error');
         }
       } catch (error) {
         this.githubAuth.error = error?.message || 'The token could not be verified.';
@@ -1377,7 +1481,7 @@ function schoolCloud() {
       if (this.githubAuth.verifying) return;
       const token = String(this.githubAuth.activeToken || '').trim();
       if (!this.githubAuth.connected || !token) {
-        this.githubAuth.error = 'Connect a GitHub token in this tab before saving the cloud secret.';
+        this.githubAuth.error = 'Connect a GitHub token on this device before saving the cloud secret.';
         return;
       }
       this.githubAuth.verifying = true;
@@ -1409,7 +1513,8 @@ function schoolCloud() {
       this.githubAuth.cloudSecretSaved = false;
       this.githubAuth.cloudSecretAlreadySaved = false;
       this.githubAuth.error = '';
-      this.notify('The GitHub token was cleared from this tab. The saved Actions secret was not changed.', 'success');
+      this.forgetSavedGithubToken();
+      this.notify('The GitHub token was forgotten on this device. The saved Actions secret in GitHub was not changed.', 'success');
     },
     toggleGithubToken() { this.githubAuth.showToken = !this.githubAuth.showToken; },
     githubUploadUrl() {
@@ -1496,7 +1601,7 @@ function schoolCloud() {
       if (!this.githubAuth.connected) findings.push({
         id: 'github-disconnected', label: 'Repository write access is not connected', count: 1,
         state: 'info', autoFixable: false,
-        cause: 'No GitHub token is held in this tab.',
+        cause: 'No GitHub token is saved on this device.',
         remedy: 'Paste the replacement token in Settings when ready.'
       });
       this.integrityDiagnosis = {
@@ -1541,14 +1646,14 @@ function schoolCloud() {
       this.notify('The local cloud-file cache was cleared.', 'success');
     },
     async clearData() {
-      if (!window.confirm('Clear School Cloud settings and cached data from this browser? GitHub files will not be deleted.')) return;
+      if (!window.confirm('Clear School Cloud settings and cached data from this browser? This forgets the saved GitHub token on this device. GitHub files will not be deleted.')) return;
       try {
         for (const key of Object.keys(localStorage)) if (key.startsWith('schoolcloud.')) localStorage.removeItem(key);
       } catch { /* Ignore locked-down storage. */ }
       this.disconnectGithub();
       this.filters = { query: '', kind: '', subject: '', year: '', sort: 'newest' };
       await this.loadLibrary();
-      this.notify('Local settings and counters were cleared. GitHub files remain unchanged.', 'success');
+      this.notify('Local settings, counters and the saved GitHub token were cleared. GitHub files remain unchanged.', 'success');
     },
 
     closePreview() {
