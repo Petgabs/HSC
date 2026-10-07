@@ -328,7 +328,11 @@ describe('dashboard wiring for storage and sign-in statistics', () => {
     expect(app).toContain('ADMIN_ACTIVITY_PATH');
     // The record ships with the upload history and travels with the site.
     const record = JSON.parse(activity);
-    expect(record.logins).toEqual([]);
+    expect(record.logins).toEqual(expect.any(Array));
+    for (const entry of record.logins) {
+      expect(entry.user).toBeTruthy();
+      expect(Number.isNaN(Date.parse(entry.at))).toBe(false);
+    }
     expect(record.uploads.length).toBeGreaterThan(0);
     for (const entry of record.uploads) {
       expect(entry.path).toMatch(/^apps\/[^/]+$/);

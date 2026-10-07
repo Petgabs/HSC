@@ -87,8 +87,10 @@ repository; GitHub Pages then makes them available to students.
   overwrite an existing file with the same name.
 - Gives every file row in the admin dashboard (mini-app table, documents
   table, most-used list, review-due list, upload-age groups and cleanup
-  candidates) its own delete button. One confirmation removes the file from
-  `apps/`, its metadata from `library.json` and its saved total from
+  candidates) its own delete button. The Documents & Resources table can be
+  filtered by subject, so administrators can narrow the list before choosing
+  one specific file to delete. One confirmation removes the file from `apps/`,
+  its metadata from `library.json` and its saved total from
   `stats/downloads.json` in the GitHub repository, clears it from the current
   browser's library view, download counts and offline cache, and the file
   disappears from the public website everywhere once GitHub Pages finishes its
