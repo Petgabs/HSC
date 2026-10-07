@@ -379,6 +379,7 @@ function schoolCloud() {
     deletingAppId: '',
     dashboardResourceQuery: '',
     dashboardResourceType: 'all',
+    dashboardResourceSubject: 'all',
     statsAgeBucketOpen: '',
     statsCleanupMinAgeDays: 365,
     statsCleanupMaxDownloads: 3,
@@ -634,8 +635,23 @@ function schoolCloud() {
         cloud: count(item => item.source === 'github')
       };
     },
+    get dashboardResourceSubjectOptions() {
+      const counts = new Map();
+      for (const resource of this.resources) {
+        const subject = String(resource.meta?.subject || '').trim() || 'Unclassified';
+        counts.set(subject, (counts.get(subject) || 0) + 1);
+      }
+      return [...counts.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([subject, count]) => ({ subject, count }));
+    },
     get filteredDashboardResources() {
       let result = searchResources(this.resources, this.dashboardResourceQuery);
+      const subject = this.dashboardResourceSubject;
+      if (subject !== 'all') {
+        result = result.filter(resource =>
+          (String(resource.meta?.subject || '').trim() || 'Unclassified') === subject);
+      }
       const type = this.dashboardResourceType;
       if (type === 'pdf') result = result.filter(item => fileExtension(item).toLowerCase() === 'pdf');
       if (type === 'word') result = result.filter(item => ['doc', 'docx'].includes(fileExtension(item).toLowerCase()));

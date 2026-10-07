@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="site-brand__version ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.15.0</span>
+                        <span class="site-brand__version ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.16.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -1517,11 +1517,12 @@
             </div>
 
             <!-- Per-resource table -->
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-8">
+            <div id="dashboard-resource-manager" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-8">
                 <div class="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h3 class="font-bold text-slate-900">Documents &amp; Resources</h3>
                         <p class="text-xs text-slate-400 mt-0.5" x-text="resources.length + (resources.length === 1 ? ' downloadable file (PDF, Word, Excel, PowerPoint)' : ' downloadable files (PDF, Word, Excel, PowerPoint)')"></p>
+                        <p class="mt-1 text-xs text-slate-500">Filter by subject to find a file, then use that file’s Delete button.</p>
                     </div>
                     <div class="flex items-center gap-3">
                         <label for="dashboard-resource-search" class="sr-only">Filter documents by title or filename</label>
@@ -1531,9 +1532,18 @@
                     </div>
                 </div>
 
-                <!-- Type & Source Filter Bar -->
+                <!-- Subject, type & source filters -->
                 <div class="px-6 py-2.5 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center gap-1.5 text-xs">
-                    <span class="text-slate-400 font-medium mr-1">Filter:</span>
+                    <label for="dashboard-resource-subject" class="font-semibold text-slate-600">Subject:</label>
+                    <select id="dashboard-resource-subject" x-model="dashboardResourceSubject"
+                            aria-label="Filter documents and resources by subject"
+                            class="max-w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm focus-ring">
+                        <option value="all" x-text="`All subjects (${resources.length})`">All subjects</option>
+                        <template x-for="option in dashboardResourceSubjectOptions" :key="'dashboard-resource-subject-' + option.subject">
+                            <option :value="option.subject" x-text="`${option.subject} (${option.count})`"></option>
+                        </template>
+                    </select>
+                    <span class="ml-1 text-slate-400 font-medium">File type / source:</span>
                     <button type="button" @click="setDashboardResourceType('all')"
                             class="px-2.5 py-1 rounded-full font-medium transition-colors focus-ring"
                             :class="dashboardResourceType === 'all' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'">

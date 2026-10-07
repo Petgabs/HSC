@@ -7,7 +7,7 @@ import { JSDOM, VirtualConsole } from 'jsdom';
  * Page-level checks for the upgraded administrator dashboard: per-file sizes,
  * total cloud storage used, the space still available, how many days each file
  * has been stored, the administrator sign-in statistics (today / week / month,
- * plus the latest sign-in) and the list of the latest uploaded files.
+ * plus the latest sign-in), subject-filtered document deletion and uploads.
  *
  * Everything runs against the real index.html and the real app.js with a
  * stubbed network, so the wiring — not just the helpers — is under test.
@@ -299,6 +299,61 @@ describe('cloud storage dashboard', () => {
       const commitCalls = visit.apiCalls().filter(url => url.includes('/commits?'));
       expect(commitCalls.length).toBeGreaterThanOrEqual(1);
       expect(commitCalls.every(url => url.includes('Mystery'))).toBe(true);
+    } finally {
+      await close(visit);
+    }
+  });
+});
+
+describe('document and resource subject filters', () => {
+  it('filters the delete table by subject and keeps deletion scoped to one file', async () => {
+    const visit = await openPage();
+    try {
+      const state = visit.state;
+      await waitForIdle(state);
+
+      // The fixture normally has one subject; assign one document to another
+      // to verify that the filter separates files rather than only counting.
+      const selectedFile = state.resources.find(item => item.fileName === 'Old paper.pdf');
+      selectedFile.meta.subject = 'CAL';
+      expect(state.dashboardResourceSubjectOptions).toEqual([
+        { subject: 'CAL', count: 1 },
+        { subject: 'Mathematics', count: 2 }
+      ]);
+
+      state.isAdmin = true;
+      state.currentView = 'dashboard';
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      const manager = visit.window.document.getElementById('dashboard-resource-manager');
+      const subjectFilter = manager?.querySelector('#dashboard-resource-subject');
+      expect(subjectFilter).toBeTruthy();
+      expect([...subjectFilter.options].map(option => option.textContent.trim())).toEqual([
+        'All subjects (3)', 'CAL (1)', 'Mathematics (2)'
+      ]);
+
+      subjectFilter.value = 'CAL';
+      subjectFilter.dispatchEvent(new visit.window.Event('change', { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      expect(state.dashboardResourceSubject).toBe('CAL');
+      expect(state.filteredDashboardResources.map(item => item.fileName)).toEqual(['Old paper.pdf']);
+      const rows = [...manager.querySelectorAll('tbody tr')];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].textContent).toContain('Old paper.pdf');
+
+      // The row action still targets just the selected file after filtering.
+      const deleteButton = rows[0].querySelector('button[aria-label^="Delete"]');
+      expect(deleteButton).toBeTruthy();
+      state.githubAuth.connected = true;
+      state.githubAuth.activeToken = 'test-token';
+      visit.window.confirm = () => true;
+      const deleted = [];
+      state.deleteGithubResource = item => deleted.push(item);
+      deleteButton.click();
+      expect(deleted).toHaveLength(1);
+      expect(deleted[0].fileName).toBe('Old paper.pdf');
+      expect(visit.errors.filter(message => /Alpine Expression Error|ReferenceError|TypeError/.test(message))).toEqual([]);
     } finally {
       await close(visit);
     }
