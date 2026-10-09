@@ -1,6 +1,6 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, resolve, sep } from 'node:path';
+import { basename, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -17,13 +17,47 @@ const types = {
 
 const server = createServer((request, response) => {
   let pathname;
-  try { pathname = decodeURIComponent(new URL(request.url || '/', 'http://dev.local').pathname); }
-  catch {
+  let urlObj;
+  try {
+    urlObj = new URL(request.url || '/', 'http://dev.local');
+    pathname = decodeURIComponent(urlObj.pathname);
+  } catch {
     response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
     response.end('Bad request');
     return;
   }
+
+  // Redirect /download to /download.html
+  if (pathname === '/download' || pathname === '/download/') {
+    response.writeHead(302, { 'Location': '/download.html' });
+    response.end();
+    return;
+  }
+
   if (pathname === '/') pathname = '/index.html';
+
+  // Dynamic apps.json generator for development mode
+  if (pathname === '/apps.json') {
+    const appsDir = resolve(root, 'apps');
+    const files = existsSync(appsDir) ? readdirSync(appsDir) : [];
+    const validExts = new Set(['.html', '.htm', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']);
+    const appList = files
+      .filter(f => validExts.has(extname(f).toLowerCase()))
+      .map(name => ({
+        type: 'file',
+        name,
+        path: `apps/${name}`,
+        sha: `apps/${name}`,
+        download_url: `apps/${name}`
+      }));
+    response.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store, max-age=0'
+    });
+    response.end(JSON.stringify(appList));
+    return;
+  }
+
   const file = resolve(root, `.${pathname}`);
   if (file !== root && !file.startsWith(`${root}${sep}`)) {
     response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -35,12 +69,21 @@ const server = createServer((request, response) => {
     response.end('Not found');
     return;
   }
-  response.writeHead(200, {
+
+  const filename = basename(file);
+  const headers = {
     'Content-Type': types[extname(file).toLowerCase()] || 'application/octet-stream',
     'Cache-Control': 'no-store, max-age=0',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin'
-  });
+  };
+
+  // Force attachment download if requested via ?download or ?download=1
+  if (urlObj.searchParams.has('download') || urlObj.searchParams.get('dl') === '1') {
+    headers['Content-Disposition'] = `attachment; filename="${filename}"`;
+  }
+
+  response.writeHead(200, headers);
   if (request.method === 'HEAD') response.end();
   else createReadStream(file).pipe(response);
 });

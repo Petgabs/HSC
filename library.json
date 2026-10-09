@@ -5,7 +5,7 @@
     "by assets/js/lib/metadata.js, so this file is entirely optional.",
     "",
     "Supported fields: title, description, subject, years (array),",
-    "tags/keywords (array — synonyms), topic, resourceType, language, owner,",
+    "tags/keywords (array \u2014 synonyms), topic, resourceType, language, owner,",
     "department, academicYear, visibility (public | school | class), version,",
     "reviewDate, licence, accessibility, addedAt.",
     "",
@@ -59,7 +59,7 @@
     "addedAt": "2026-10-01T11:46:14.101Z"
   },
   "apps/Easy-Paper 1-students.pdf": {
-    "title": "Easy Paper 1 students — Questions",
+    "title": "Easy Paper 1 students \u2014 Questions",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -73,7 +73,7 @@
     "addedAt": "2026-10-01T12:42:56.894Z"
   },
   "apps/Easy-Paper 1-answers.pdf": {
-    "title": "Easy Paper 1 answers — SOLUTIONS",
+    "title": "Easy Paper 1 answers \u2014 SOLUTIONS",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -101,7 +101,7 @@
     "addedAt": "2026-10-01T12:47:00.279Z"
   },
   "apps/Easy-Moderate-Paper 2-answers.pdf": {
-    "title": "Easy Moderate Paper 2 answers — SOLUTIONS",
+    "title": "Easy Moderate Paper 2 answers \u2014 SOLUTIONS",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -115,7 +115,7 @@
     "addedAt": "2026-10-01T12:51:00.710Z"
   },
   "apps/Easy-Moderate-Paper 2-students.pdf": {
-    "title": "Easy Moderate Paper 2 students — QUESTIONS",
+    "title": "Easy Moderate Paper 2 students \u2014 QUESTIONS",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -129,7 +129,7 @@
     "addedAt": "2026-10-01T12:50:18.394Z"
   },
   "apps/Year_12_Mathematics_Advanced_Topic_MCQ_Practice.html": {
-    "title": "MAD 12 MCQ Revision (By Topic) — Mini app",
+    "title": "MAD 12 MCQ Revision (By Topic) \u2014 Mini app",
     "description": "Download this file and open to your internet browser",
     "subject": "Mathematics",
     "years": [
@@ -143,7 +143,7 @@
     "addedAt": "2026-10-01T12:55:47.441Z"
   },
   "apps/PEM 2025.pdf": {
-    "title": "PEM 2025 — QUESTIONS-3 hours paper",
+    "title": "PEM 2025 \u2014 QUESTIONS-3 hours paper",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -171,7 +171,7 @@
     "addedAt": "2026-10-01T13:03:13.203Z"
   },
   "apps/Sydney Boys 2026 2U Trials & Solutions.pdf": {
-    "title": "Sydney Boys 2026 Trials & Solutions — 3 hrs paper",
+    "title": "Sydney Boys 2026 Trials & Solutions \u2014 3 hrs paper",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -185,7 +185,7 @@
     "addedAt": "2026-10-01T13:09:25.496Z"
   },
   "apps/Killara 2026 2U Trials & Solutions.pdf": {
-    "title": "Killara 2026 2U Trials & Solutions — 3 hrs paper",
+    "title": "Killara 2026 2U Trials & Solutions \u2014 3 hrs paper",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -199,7 +199,7 @@
     "addedAt": "2026-10-01T13:08:27.802Z"
   },
   "apps/Hunters Hill 2026 2U Trials & Solutions.pdf": {
-    "title": "Hunters Hill 2026 Trials & Solutions — 3 hrs paper",
+    "title": "Hunters Hill 2026 Trials & Solutions \u2014 3 hrs paper",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -213,7 +213,7 @@
     "addedAt": "2026-10-01T13:12:21.696Z"
   },
   "apps/2025-hsc-maths-advanced (1).pdf": {
-    "title": "HSC maths advanced-2025 — 3 hrs paper",
+    "title": "HSC maths advanced-2025 \u2014 3 hrs paper",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -227,7 +227,7 @@
     "addedAt": "2026-10-01T13:13:26.430Z"
   },
   "apps/2025-hsc-maths-adv-mg.pdf": {
-    "title": "HSC maths adv  2025— SOLUTIONS",
+    "title": "HSC maths adv  2025\u2014 SOLUTIONS",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -241,7 +241,7 @@
     "addedAt": "2026-10-01T13:14:13.089Z"
   },
   "apps/2024-hsc-maths-adv.pdf": {
-    "title": "HSC maths adv 2024— 3 hrs paper",
+    "title": "HSC maths adv 2024\u2014 3 hrs paper",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -255,7 +255,7 @@
     "addedAt": "2026-10-01T13:14:50.814Z"
   },
   "apps/2024-hsc-maths-adv-mg.pdf": {
-    "title": "HSC maths adv 2024— SOLUTIONS",
+    "title": "HSC maths adv 2024\u2014 SOLUTIONS",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -269,7 +269,7 @@
     "addedAt": "2026-10-01T13:15:32.238Z"
   },
   "apps/2023-hsc-maths-adv-mg (1).pdf": {
-    "title": "HSC maths adv 2023— SOLUTIONS",
+    "title": "HSC maths adv 2023\u2014 SOLUTIONS",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -283,7 +283,7 @@
     "addedAt": "2026-10-02T11:37:28.988Z"
   },
   "apps/2023-hsc-maths-adv (1).pdf": {
-    "title": "HSC maths adv 20203 — 3 hrs paper",
+    "title": "HSC maths adv 20203 \u2014 3 hrs paper",
     "description": "",
     "subject": "Mathematics",
     "years": [
@@ -375,5 +375,32 @@
     "addedAt": "2026-10-06T15:37:13.372Z",
     "sha256": "abb5edb88805018ff7aebc807d95fb09f3640ef42457bd273e4f1c957f60481a",
     "bytes": 1120937
+  },
+  "apps/MAD 12 - Practice questions solutions.pdf": {
+    "title": "MAD 12 - Practice questions solutions",
+    "description": "Full NESA Standard Solutions and Marking Guidelines for Practice Paper MAD 12",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [
+      "Solutions",
+      "Trial Exam",
+      "Mathematics Advanced"
+    ],
+    "keywords": [
+      "Calculus",
+      "Integration",
+      "Normal Distribution",
+      "Annuities"
+    ],
+    "language": "English",
+    "owner": "Petgabs",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-09T03:30:00.000Z",
+    "sha256": "5c54b7eba8723554a48a92d0d83ebf91e9cf25b5d5cb792a0d12de0d1e11200f",
+    "bytes": 252982
   }
 }

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download Worked Solutions — HSC Mathematics Advanced Year 12 (MAD 12)</title>
+  <link rel="stylesheet" href="assets/css/app.css" />
+  <script src="assets/vendor/lucide.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #F8FAFC;
+      color: #1E293B;
+      margin: 0;
+      padding: 0;
+    }
+    .header-bar {
+      background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
+      color: white;
+      padding: 2rem 1.5rem;
+      text-align: center;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    .container {
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+      border: 1px solid #E2E8F0;
+      margin-bottom: 2rem;
+    }
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      background: #16A34A;
+      color: white;
+      font-weight: 700;
+      font-size: 1.15rem;
+      padding: 1rem 2rem;
+      border-radius: 8px;
+      text-decoration: none;
+      box-shadow: 0 4px 6px rgba(22, 163, 74, 0.25);
+      transition: all 0.2s ease-in-out;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-download:hover {
+      background: #15803D;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 12px rgba(22, 163, 74, 0.35);
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #F1F5F9;
+      color: #334155;
+      font-weight: 600;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      border: 1px solid #CBD5E1;
+      transition: background 0.15s;
+    }
+    .btn-secondary:hover {
+      background: #E2E8F0;
+    }
+    .pdf-preview {
+      width: 100%;
+      height: 600px;
+      border: 1px solid #CBD5E1;
+      border-radius: 8px;
+      margin-top: 1.5rem;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-blue { background: #DBEAFE; color: #1E40AF; }
+    .badge-green { background: #DCFCE7; color: #166534; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.6rem 0.8rem;
+      border: 1px solid #E2E8F0;
+      text-align: left;
+    }
+    th {
+      background-color: #F8FAFC;
+      font-weight: 600;
+      color: #334155;
+    }
+    tr:nth-child(even) {
+      background-color: #F8FAFC;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-bar">
+    <div style="max-width: 800px; margin: 0 auto;">
+      <span class="badge badge-blue" style="background: rgba(255,255,255,0.2); color: white; margin-bottom: 0.5rem;">HSC Mathematics Advanced Year 12</span>
+      <h1 style="margin: 0.5rem 0; font-size: 2rem; font-weight: 800;">Worked Solutions — Practice Exam (MAD 12)</h1>
+      <p style="margin: 0; opacity: 0.9; font-size: 1.05rem;">NSW Stage 6 Curriculum | NESA Reference Sheet Standard Solutions & Marking Criteria</p>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- Download Card -->
+    <div class="card" style="text-align: center;">
+      <div style="display: inline-block; padding: 1rem; background: #DCFCE7; border-radius: 50%; margin-bottom: 1rem;">
+        <i data-lucide="file-check-2" style="width: 48px; height: 48px; color: #16A34A;"></i>
+      </div>
+      <h2 style="margin: 0 0 0.5rem 0; font-size: 1.6rem; color: #0F172A;">Your Solutions PDF is Ready</h2>
+      <p style="color: #64748B; margin-bottom: 1.5rem; max-width: 600px; margin-left: auto; margin-right: auto;">
+        Contains complete, step-by-step solutions for Questions 1 through 16, complete with mathematical diagrams (cubic curve sketch, normal distribution curve, open tent frame), marking breakdowns, and summary answers table.
+      </p>
+
+      <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem;">
+        <!-- Primary Direct Download -->
+        <a id="downloadBtn" href="/HSC_Mathematics_Advanced_Year_12_Solutions.pdf?download=1" download="HSC_Mathematics_Advanced_Year_12_Solutions.pdf" class="btn-download">
+          <i data-lucide="download" style="width: 22px; height: 22px;"></i>
+          <span>Download Solutions PDF (248 KB)</span>
+        </a>
+
+        <!-- Fallback Blob Download Button -->
+        <button id="blobDownloadBtn" type="button" class="btn-secondary" style="border-color: #16A34A; color: #166534;" onclick="triggerBlobDownload()">
+          <i data-lucide="download-cloud" style="width: 18px; height: 18px;"></i>
+          <span>Direct Browser Save</span>
+        </button>
+      </div>
+
+      <div style="font-size: 0.85rem; color: #64748B;">
+        <span>Format: 9-page Printable A4 PDF</span> &bull; 
+        <span>Generated: October 2026</span> &bull; 
+        <a href="/index.html" style="color: #2563EB; text-decoration: underline;">Back to School Cloud Library</a>
+      </div>
+    </div>
+
+    <!-- Embedded Live PDF Viewer -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="margin: 0; font-size: 1.25rem; color: #1E293B; display: flex; align-items: center; gap: 0.5rem;">
+          <i data-lucide="eye" style="width: 20px; height: 20px; color: #2563EB;"></i> Online PDF Preview
+        </h3>
+        <a href="/HSC_Mathematics_Advanced_Year_12_Solutions.pdf" target="_blank" class="btn-secondary" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+          <i data-lucide="external-link" style="width: 14px; height: 14px;"></i> Open in New Tab
+        </a>
+      </div>
+      <iframe src="/HSC_Mathematics_Advanced_Year_12_Solutions.pdf" class="pdf-preview" title="HSC Solutions PDF Preview"></iframe>
+    </div>
+
+    <!-- Summary of Final Answers Table -->
+    <div class="card">
+      <h3 style="margin: 0 0 1rem 0; font-size: 1.25rem; color: #1E293B;">Summary of Final Answers (Questions 1 – 16)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 60px;">Q#</th>
+            <th>Topic</th>
+            <th>Final Answer</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><b>1</b></td><td>Calculus — Linear Substitution</td><td><sup>1</sup>/<sub>6</sub>(4x + 1)<sup>3/2</sup> + C</td></tr>
+          <tr><td><b>2</b></td><td>Calculus — Increasing Functions</td><td>x &le; -&radic;3 or x &ge; &radic;3 &nbsp;<i>((-&infin;, -&radic;3] &cup; [&radic;3, &infin;))</i></td></tr>
+          <tr><td><b>3</b></td><td>Calculus — Logarithmic Integration</td><td><sup>1</sup>/<sub>3</sub> ln(e<sup>3x</sup> + 1) + C</td></tr>
+          <tr><td><b>4a</b></td><td>Calculus — Chain Rule</td><td>[3(&radic;x + 1)<sup>2</sup>] / (2&radic;x)</td></tr>
+          <tr><td><b>4b</b></td><td>Calculus — Reverse Chain Rule</td><td><sup>1</sup>/<sub>3</sub>(&radic;x + 1)<sup>3</sup> + C</td></tr>
+          <tr><td><b>5</b></td><td>Sequences & Series — AP</td><td><b>Day 43</b></td></tr>
+          <tr><td><b>6a</b></td><td>Calculus — Stationary Points</td><td>Local Max: (1, 7); &nbsp; Local Min: (3, 3)</td></tr>
+          <tr><td><b>6b</b></td><td>Calculus — Point of Inflection</td><td>Point of Inflection: (2, 5)</td></tr>
+          <tr><td><b>6c</b></td><td>Calculus — Curve Sketching</td><td>Cubic plotted through (0, 3), (1, 7), (2, 5), (3, 3)</td></tr>
+          <tr><td><b>7</b></td><td>Calculus — Tangents & Normals</td><td>x + 4y - (2 + 4 ln 3) = 0</td></tr>
+          <tr><td><b>8</b></td><td>Trigonometry — Quadratic Eqn</td><td>x = 2&pi;/3, &nbsp;&pi;, &nbsp;4&pi;/3</td></tr>
+          <tr><td><b>9</b></td><td>Functions — Absolute Value</td><td>x = 2 or x = -5</td></tr>
+          <tr><td><b>10</b></td><td>Calculus — Product & Chain Rule</td><td>5 cos 5x tan(e<sup>x</sup>) + e<sup>x</sup> sin 5x sec<sup>2</sup>(e<sup>x</sup>)</td></tr>
+          <tr><td><b>11</b></td><td>Functions — Domain & Range</td><td>Domain: x &ge; 1 ([1, &infin;)); &nbsp; Range: y &ge; 0 ([0, &infin;))</td></tr>
+          <tr><td><b>12i</b></td><td>Statistics — Correlation</td><td>r &asymp; 0.53 (moderate positive linear correlation)</td></tr>
+          <tr><td><b>12ii</b></td><td>Statistics — Regression Line</td><td><b>W = 18x + 706</b></td></tr>
+          <tr><td><b>12iii</b></td><td>Statistics — Validity</td><td>No; extrapolation outside [15, 68] is unreliable</td></tr>
+          <tr><td><b>13</b></td><td>Differential Eqn — Exponential</td><td><b>11 months</b></td></tr>
+          <tr><td><b>14</b></td><td>Normal Distribution</td><td><b>0.6449</b> (or 64.49%)</td></tr>
+          <tr><td><b>15a</b></td><td>Optimization — Total Length</td><td>Shown: l = 3x + 48/x</td></tr>
+          <tr><td><b>15b</b></td><td>Optimization — Minimum Length</td><td><b>x = 4 m</b></td></tr>
+          <tr><td><b>15c</b></td><td>Optimization — Minimum Cost</td><td><b>$228.00</b></td></tr>
+          <tr><td><b>16</b></td><td>Financial Maths — Annuities</td><td><b>$2354.88</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script>
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+
+    async function triggerBlobDownload() {
+      const btn = document.getElementById('blobDownloadBtn');
+      const origText = btn.innerHTML;
+      btn.innerHTML = '<i data-lucide="loader-2" class="animate-spin"></i> Preparing...';
+      try {
+        const response = await fetch('/HSC_Mathematics_Advanced_Year_12_Solutions.pdf');
+        if (!response.ok) throw new Error('Network response was not ok');
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = 'HSC_Mathematics_Advanced_Year_12_Solutions.pdf';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(blobUrl);
+        a.remove();
+        btn.innerHTML = '<i data-lucide="check"></i> Downloaded!';
+        setTimeout(() => { btn.innerHTML = origText; }, 2500);
+      } catch (err) {
+        alert('Could not start download: ' + err.message + '. Please use the green Download button.');
+        btn.innerHTML = origText;
+      }
+    }
+  </script>
+</body>
+</html>
