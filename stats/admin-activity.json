@@ -9,8 +9,12 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-10T03:21:26.161Z",
+  "updatedAt": "2026-10-10T03:21:50.665Z",
   "logins": [
+    {
+      "at": "2026-10-10T03:21:50.141Z",
+      "user": "hsc-admin"
+    },
     {
       "at": "2026-10-10T03:21:25.562Z",
       "user": "hsc-admin"
