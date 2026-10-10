@@ -341,5 +341,22 @@
     "version": "1.0",
     "addedAt": "2026-10-06T09:12:00.362Z",
     "bytes": 892777
+  },
+  "apps/2016-hsc-mg-visual-arts.pdf": {
+    "title": "2016 hsc mg visual arts",
+    "subject": "VA",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Cherise",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-10T04:33:26.171Z",
+    "sha256": "b79b04996c09e0f8af0495e2ee22d7ef274f13721aaa26373ee9b55156188f54",
+    "bytes": 306824
   }
 }
