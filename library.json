@@ -341,22 +341,5 @@
     "version": "1.0",
     "addedAt": "2026-10-06T09:12:00.362Z",
     "bytes": 892777
-  },
-  "apps/Answers-Revision-Friday Afternoon.docx": {
-    "title": "Answers Revision Friday Afternoon",
-    "subject": "CAL",
-    "years": [
-      10
-    ],
-    "tags": [],
-    "keywords": [],
-    "language": "English",
-    "owner": "Ailsa",
-    "academicYear": "2026",
-    "visibility": "public",
-    "version": "1.0",
-    "addedAt": "2026-10-06T15:37:13.372Z",
-    "sha256": "abb5edb88805018ff7aebc807d95fb09f3640ef42457bd273e4f1c957f60481a",
-    "bytes": 1120937
   }
 }
