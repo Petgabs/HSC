@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-19T00:26:16.167Z",
+  "updatedAt": "2026-10-19T00:27:12.979Z",
   "logins": [
     {
       "at": "2026-10-19T00:26:16.166Z",
@@ -69,6 +69,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-19T00:27:12.978Z",
+      "path": "apps/Night-Study-Schedule-Viewer (8).html",
+      "name": "Night-Study-Schedule-Viewer (8).html",
+      "title": "Night Study Schedule Viewer (8)",
+      "bytes": 2487041,
+      "subject": "Others",
+      "years": [
+        10
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-10T04:33:37.617Z",
       "path": "apps/2016-hsc-mg-visual-arts.pdf",
