@@ -46,6 +46,15 @@ export const SITE_CONFIG = Object.freeze({
     salt: '23fd392e297167dd7efb39cc345c4808',
     passwordHash: 'e5286ed75095b3ae3e8dd2fbed216e20e2e575cb69b31bd4270b7d544db37986'
   },
+  supabase: Object.freeze({
+    // Supabase backend for HSC School Cloud (tables use hsc_ prefix in the Year 11 Report project)
+    // The anon/publishable key is public by design (Row Level Security enforces access).
+    // Never commit a privileged server key here.
+    url: 'https://sdjuojttlxciispgttwx.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkanVvanR0bHhjaWlzcGd0dHd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyNDg2NjMsImV4cCI6MjEwNzgyNDY2M30.f9Voi0lk02eT44IxBz8SCAPYsU3iTDSdwsbbaywfIQI',
+    publishableKey: 'sb_publishable_zOoQK2V55OEwCyt3fmRJFQ_PmQWmmFJ',
+    enabled: true
+  }),
   abacus: Object.freeze({
     baseUrl: 'https://abacus.jasoncameron.dev',
     namespace: 'petgabs-hsc-schoolcloud',

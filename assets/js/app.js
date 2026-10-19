@@ -33,6 +33,12 @@ import {
   AdminPresenceBeacon, PRESENCE_BUCKET_MS, PRESENCE_WINDOW_MS, describePresence, localPresenceIsLive,
   presenceBucketIndex
 } from './lib/presence.js';
+import {
+  isSupabaseEnabled, getSupabaseConfig, fetchSupabaseResources, getSupabaseCounters, getSupabaseFileTotals,
+  incrementSupabaseCounter, recordSupabaseVisit, recordSupabaseDownload, heartbeatSupabasePresence,
+  readSupabasePresence, recordSupabaseLogin, recordSupabaseUpload, getSupabaseAdminActivity,
+  resourcesToLibrary, countersToStatsRecord
+} from './lib/supabase.js';
 import { interfaceModeForViewport } from './lib/responsive.js';
 import {
   findDigestMatch, formatDigest, inspectUpload, readFileBytes, sha256Hex as sha256HexBytes, suggestAvailableFileName
@@ -1539,6 +1545,42 @@ function schoolCloud() {
           }
 
           if (sequence !== this._loadSequence) return;
+          // Supabase progressive enhancement: merge remote resources + counters when enabled
+          let supabaseLibrary = null;
+          let supabaseStats = null;
+          if (isSupabaseEnabled()) {
+            try {
+              const [rows, counters, fileTotals] = await Promise.all([
+                fetchSupabaseResources().catch(() => null),
+                getSupabaseCounters().catch(() => null),
+                getSupabaseFileTotals().catch(() => null)
+              ]);
+              if (Array.isArray(rows) && rows.length) {
+                supabaseLibrary = resourcesToLibrary(rows);
+                // Prefer Supabase library rows as authoritative, but keep GitHub fallback for missing paths
+                library = { ...library, ...supabaseLibrary };
+                // If Supabase has any resources, also synthesize manifest entries for paths not in GitHub apps.json
+                if (!manifest && rows.length) {
+                  manifest = rows.map(r => ({ type: 'file', name: (r.path||'').split('/').pop() || '', path: r.path, sha: r.sha256 || '', size: r.file_size || 0, download_url: r.download_url || r.path }));
+                } else if (manifest && rows.length) {
+                  const seen = new Set(manifest.map(m => m.path));
+                  for (const r of rows) if (r.path && !seen.has(r.path)) manifest.push({ type: 'file', name: (r.path||'').split('/').pop() || '', path: r.path, sha: r.sha256 || '', size: r.file_size || 0, download_url: r.download_url || r.path });
+                }
+              }
+              // Build a stats record from Supabase counters + file_totals
+              let visitorsVal = counters ? counters.get('visitors') : null;
+              const hasFileTotals = fileTotals && fileTotals.size > 0;
+              if ((Number.isFinite(visitorsVal) && visitorsVal !== null) || hasFileTotals) {
+                if (visitorsVal === null || !Number.isFinite(visitorsVal)) visitorsVal = stats?.visitors || 0;
+                supabaseStats = countersToStatsRecord({ visitors: visitorsVal, fileTotals });
+                // Preserve GitHub files not yet in Supabase file_totals
+                if (stats?.files && supabaseStats.files) {
+                  for (const [path, entry] of Object.entries(stats.files)) if (!supabaseStats.files[path]) supabaseStats.files[path] = entry;
+                }
+                stats = supabaseStats;
+              }
+            } catch {}
+          }
           const snapshot = { manifest, library, stats };
           this.applyLibrarySnapshot(snapshot, { fromCache: false, sequence });
           this.saveCachedLibrarySnapshot(snapshot);
@@ -1548,6 +1590,14 @@ function schoolCloud() {
           } else {
             this.adminActivityStatus.source = 'cache';
             this.adminActivityStatus.loading = false;
+          }
+          // Also absorb Supabase admin activity if present (non-blocking already in hydrate, but also here)
+          if (isSupabaseEnabled()) {
+            getSupabaseAdminActivity(80).then(supaActivity => {
+              if (supaActivity && (supaActivity.logins?.length || supaActivity.uploads?.length)) {
+                this.absorbAdminActivity(supaActivity, { source: 'supabase', updatedAt: supaActivity.updatedAt || '' });
+              }
+            }).catch(() => {});
           }
           // Sizes and storage ages are the only dashboard facts `apps.json`
           // cannot carry, so they are resolved in the background, once the
@@ -1601,6 +1651,36 @@ function schoolCloud() {
       this._visitorOnline = false;
       const local = readLocalCounter(key);
       const recorded = Number(this.downloadStatsRecord?.visitors) || 0;
+
+      // Try Supabase first when enabled — single source of truth for visits.
+      if (isSupabaseEnabled()) {
+        try {
+          // On new session, record a visit (increments visitors counter via RPC)
+          if (isNewSession) {
+            const supaVisitors = await recordSupabaseVisit({ day: new Date().toISOString().slice(0, 10) });
+            if (supaVisitors !== null && Number.isFinite(supaVisitors)) {
+              this.stats.visitors = writeLocalCounter(key, maxCounter(recorded, supaVisitors, isNewSession ? local + 1 : local));
+              this._visitorOnline = true;
+              this._supabaseOnline = true;
+              this.stats.loadingVisitors = false;
+              this.reseedVisitorFromRecord();
+              this.updateCounterStatus();
+              return;
+            }
+          }
+          const supaValue = await getSupabaseCounters().then(m => m ? m.get('visitors') : null);
+          if (supaValue !== null && Number.isFinite(supaValue)) {
+            this.stats.visitors = writeLocalCounter(key, maxCounter(recorded, supaValue, isNewSession ? local + 1 : local));
+            this._visitorOnline = true;
+            this._supabaseOnline = true;
+            this.stats.loadingVisitors = false;
+            this.reseedVisitorFromRecord();
+            this.updateCounterStatus();
+            return;
+          }
+        } catch {}
+        // Fall through to Abacus/local on failure
+      }
 
       if (!this._counterClient) {
         this.stats.visitors = writeLocalCounter(key, maxCounter(recorded, isNewSession ? local + 1 : local));
@@ -1692,7 +1772,7 @@ function schoolCloud() {
     },
 
     async readDownloadCounter(item, force = false) {
-      if (!item || !this._counterClient) return;
+      if (!item) return;
       if (this._counterReadInFlight.includes(item.id)) return;
       if (!force && this._counterReadStarted.includes(item.id)) return;
       if (!this._counterReadStarted.includes(item.id)) this._counterReadStarted.push(item.id);
@@ -1700,6 +1780,40 @@ function schoolCloud() {
       this._counterReadAt[item.id] = Date.now();
       const key = item.counterKey || downloadCounterKey(item.path);
       item.counterKey = key;
+      // Supabase per-file totals first (if enabled)
+      if (isSupabaseEnabled()) {
+        try {
+          // Try file_totals + counters map (batched) — cached after first load
+          if (!this._supabaseCounters) this._supabaseCounters = await getSupabaseCounters();
+          if (!this._supabaseFileTotals) this._supabaseFileTotals = await getSupabaseFileTotals();
+          let supaValue = null;
+          if (this._supabaseCounters) supaValue = this._supabaseCounters.get(key);
+          if (supaValue === undefined && this._supabaseFileTotals) {
+            const entry = this._supabaseFileTotals.get(String(item.path || '').toLowerCase());
+            if (entry) supaValue = entry.downloads;
+          }
+          if (supaValue === undefined || supaValue === null) {
+            // Single key fetch fallback
+            const counters = await getSupabaseCounters();
+            if (counters) supaValue = counters.get(key) ?? null;
+            this._supabaseCounters = counters || this._supabaseCounters;
+          }
+          if (Number.isFinite(supaValue)) {
+            const total = maxCounter(this.downloadsOf(item), supaValue, downloadsFromRecord(this.downloadStatsRecord, item.path));
+            this.stats.downloads[item.id] = total;
+            writeLocalCounter(key, total);
+            this._downloadCountersOnline = true;
+            this._supabaseOnline = true;
+            this.updateCounterStatus();
+            return;
+          }
+        } catch {}
+      }
+      if (!this._counterClient) {
+        this.stats.downloads[item.id] = Math.max(this.downloadsOf(item), readLocalCounter(key));
+        this._counterReadInFlight = this._counterReadInFlight.filter(id => id !== item.id);
+        return;
+      }
       try {
         const value = await this._counterClient.get(key);
         const total = maxCounter(this.downloadsOf(item), value, downloadsFromRecord(this.downloadStatsRecord, item.path));
@@ -1747,11 +1861,15 @@ function schoolCloud() {
 
     updateCounterStatus(downloadCountersOnline) {
       if (downloadCountersOnline !== undefined) this._downloadCountersOnline = Boolean(downloadCountersOnline);
-      this.stats.online = Boolean(this._visitorOnline || this._downloadCountersOnline) && Boolean(this._counterClient);
-      // Three layers, best first: live Abacus totals shared across devices,
-      // the last GitHub-saved record served from this same origin, and finally
-      // per-browser fallback values.
-      this.stats.backend = this.stats.online ? 'abacus' : (this.hasDownloadRecord ? 'github' : 'local');
+      const abacusOnline = Boolean(this._visitorOnline || this._downloadCountersOnline) && Boolean(this._counterClient);
+      const supabaseOnline = Boolean(this._supabaseOnline);
+      this.stats.online = abacusOnline || supabaseOnline;
+      // Four layers, best first: Supabase (Postgres), live Abacus totals shared across devices,
+      // the last GitHub-saved record served from this same origin, and finally per-browser fallback values.
+      if (supabaseOnline) this.stats.backend = 'supabase';
+      else if (abacusOnline) this.stats.backend = 'abacus';
+      else this.stats.backend = this.hasDownloadRecord ? 'github' : 'local';
+      if (supabaseOnline) this.stats.online = true;
     },
 
     async syncDownloadStatsToGitHub() {
@@ -1857,6 +1975,12 @@ function schoolCloud() {
       this.writeLocalAdminActivity(merged);
       this.writePendingAdminActivity(pending);
       this.adminActivityStatus.loading = false;
+      // Supabase additional source (non-blocking)
+      if (isSupabaseEnabled()) {
+        getSupabaseAdminActivity(100).then(supa => {
+          if (supa) this.absorbAdminActivity(supa, { source: 'supabase', updatedAt: supa.updatedAt || '' });
+        }).catch(() => {});
+      }
       return merged;
     },
     /**
@@ -1903,6 +2027,9 @@ function schoolCloud() {
         at: new Date().toISOString(),
         user: SITE_CONFIG.admin.username || 'administrator'
       });
+      if (isSupabaseEnabled()) {
+        recordSupabaseLogin(SITE_CONFIG.admin.username || 'administrator').catch(() => {});
+      }
     },
     /** Remember a published file, so the dashboard can list the latest uploads. */
     recordAdminUpload(item) {
@@ -1917,6 +2044,17 @@ function schoolCloud() {
         years: item.meta?.years || [],
         owner: item.meta?.owner || ''
       });
+      if (isSupabaseEnabled()) {
+        recordSupabaseUpload({
+          path: item.path || '',
+          name: item.fileName || '',
+          title: item.name || item.fileName || '',
+          bytes: Number(item.size) || 0,
+          subject: item.meta?.subject || '',
+          years: item.meta?.years || [],
+          owner: item.meta?.owner || ''
+        }).catch(() => {});
+      }
     },
     /**
      * Merge queued and local entries into stats/admin-activity.json. Silent by
@@ -2334,9 +2472,39 @@ function schoolCloud() {
       anchor.remove();
       this.notify(`Download started successfully for “${item.name}”.`, 'success');
 
-      // Do not block the student's download on analytics. Abacus is contacted
-      // exactly once per click; a failure falls back to a per-browser count.
-      if (this._counterClient) {
+      // Do not block the student's download on analytics. Supabase is tried first,
+      // then Abacus exactly once per click; a failure falls back to a per-browser count.
+      if (isSupabaseEnabled()) {
+        recordSupabaseDownload({ path: item.path, key, deviceHash: '' }).then(total => {
+          if (Number.isFinite(total)) {
+            this.stats.downloads[item.id] = Math.max(this.downloadsOf(item), total);
+            writeLocalCounter(key, total);
+            this._supabaseOnline = true;
+            this._downloadCountersOnline = true;
+            this.updateCounterStatus();
+            // Keep local file_totals cache in sync
+            if (this._supabaseFileTotals) this._supabaseFileTotals.set(String(item.path||'').toLowerCase(), { path: item.path, key, downloads: total });
+          } else if (this._counterClient) {
+            this._counterClient.hit(key).then(value => {
+              const total2 = Math.max(this.downloadsOf(item), value);
+              this.stats.downloads[item.id] = total2;
+              writeLocalCounter(key, total2);
+              this._downloadCountersOnline = true;
+              this.updateCounterStatus();
+            }).catch(() => this.updateCounterStatus());
+          }
+        }).catch(() => {
+          if (this._counterClient) {
+            this._counterClient.hit(key).then(value => {
+              const total2 = Math.max(this.downloadsOf(item), value);
+              this.stats.downloads[item.id] = total2;
+              writeLocalCounter(key, total2);
+              this._downloadCountersOnline = true;
+              this.updateCounterStatus();
+            }).catch(() => this.updateCounterStatus());
+          }
+        });
+      } else if (this._counterClient) {
         this._counterClient.hit(key).then(value => {
           const total = Math.max(this.downloadsOf(item), value);
           this.stats.downloads[item.id] = total;
@@ -2377,6 +2545,7 @@ function schoolCloud() {
           owner: target.owner, repo: target.name, branch,
           token: this.githubAuth.activeToken, path: item.path
         });
+        if (isSupabaseEnabled()) deleteSupabaseResource(item.path).catch(() => {});
         // Drop the file's saved download total from the shared GitHub record
         // so it stops appearing in statistics after the next Pages deploy.
         // The live Abacus counter itself cannot be deleted: counters created
@@ -2656,6 +2825,30 @@ function schoolCloud() {
           onProgress: progress => this.applyUploadProgress(progress)
         });
         this.uploadResult = { ...result, fileSize: bytes.length };
+        // Mirror to Supabase hsc_resources when enabled — non-blocking, GitHub remains source of truth
+        if (isSupabaseEnabled()) {
+          upsertSupabaseResource({
+            path: result.path,
+            title: metadata.title,
+            description: metadata.description || '',
+            subject: metadata.subject || 'Others',
+            years: metadata.years || [],
+            keywords: metadata.keywords || metadata.tags || [],
+            language: metadata.language || 'English',
+            owner: metadata.owner || '',
+            department: metadata.department || '',
+            resource_type: metadata.resourceType || '',
+            visibility: metadata.visibility || 'public',
+            version: metadata.version || '1.0',
+            topic: metadata.topic || '',
+            licence: metadata.licence || '',
+            academic_year: metadata.academicYear || '',
+            added_at: metadata.addedAt || new Date().toISOString(),
+            file_size: bytes.length || 0,
+            sha256: digest || '',
+            download_url: result.downloadUrl || result.path
+          }).catch(() => {});
+        }
 
         // Show the new resource on this device immediately; the published
         // manifest follows when GitHub Pages finishes deploying.
@@ -3348,6 +3541,27 @@ function schoolCloud() {
       this._presenceReadPromise = request;
       try {
         await request;
+        // Supabase presence: read current + previous bucket if enabled
+        if (isSupabaseEnabled()) {
+          try {
+            const cur = presenceBucketIndex(now);
+            const prev = cur - 1;
+            const keys = [`admin-online-${cur}`, `admin-online-${prev}`];
+            const rows = await readSupabasePresence(keys);
+            const nowTs = Date.now();
+            const hasHit = rows.some(r => {
+              const updated = Date.parse(r.updated_at || '') || 0;
+              return nowTs - updated < PRESENCE_WINDOW_MS && (r.hits || 0) > 0;
+            });
+            if (hasHit) {
+              // Merge Supabase live state into presence without overwriting Abacus detail
+              const snap = this._presenceBeacon.snapshot();
+              if (!snap.live) {
+                this.applyPresenceState({ ...snap, live: true, checkedAt: nowTs, lastSeenAt: nowTs, source: 'supabase' });
+              }
+            }
+          } catch {}
+        }
       } catch {
         // A failed presence read keeps the last known state on screen.
       } finally {
@@ -3361,6 +3575,14 @@ function schoolCloud() {
       if (!this._presenceBeacon) return;
       try {
         await this._presenceBeacon.announce();
+        // Also publish to Supabase when enabled — same bucket index as Abacus.
+        if (isSupabaseEnabled()) {
+          try {
+            const idx = presenceBucketIndex(Date.now());
+            const key = `admin-online-${idx}`;
+            await heartbeatSupabasePresence(key, idx);
+          } catch {}
+        }
       } finally {
         this.applyPresenceState(this._presenceBeacon.snapshot());
       }

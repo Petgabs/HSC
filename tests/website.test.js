@@ -91,20 +91,25 @@ describe('School Cloud release configuration', () => {
     expect(publisher).toContain('because it changed repeatedly');
   });
 
-  it('ships with no GitHub credential and allows only the Abacus counter origin', async () => {
+  it('ships with no GitHub credential and allows only the Abacus + Supabase counter origins', async () => {
     const [config, html, headers] = await Promise.all([
       read('../assets/js/config.js'), read('../index.html'), read('../_headers')
     ]);
     expect(config).toContain("baseUrl: 'https://abacus.jasoncameron.dev'");
+    expect(config).toContain('supabase');
+    expect(config).toContain('supabase.co');
     // The admin gate ships a username, a salt and a SHA-256 digest only — never a plain password.
     expect(config).toMatch(/username:\s*'hsc-admin'/);
     expect(config).toMatch(/salt:\s*'[0-9a-f]{16,}'/);
     expect(config).toMatch(/passwordHash:\s*'[0-9a-f]{64}'/);
     expect(config).not.toMatch(/\bpassword\s*:\s*'/i);
     expect(config).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
+    // Public anon key is safe; service_role must never ship in client config
+    expect(config).not.toMatch(/service_role/);
     expect(html).toContain('https://abacus.jasoncameron.dev');
-    expect(html).not.toContain('supabase.co');
-    expect(headers).not.toContain('supabase.co');
+    expect(html).toContain('supabase.co');
+    expect(headers).toContain('supabase.co');
+    expect(config).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
   });
 
   it('has every first-party asset referenced by the page and the token-encryption runtime', async () => {

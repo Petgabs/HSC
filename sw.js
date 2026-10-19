@@ -47,6 +47,7 @@ const SHELL_ASSETS = [
   './assets/js/lib/responsive.js',
   './assets/js/lib/uploadSafety.js',
   './assets/js/lib/tokenVault.js',
+  './assets/js/lib/supabase.js',
   './assets/vendor/alpine.esm.js',
   './assets/vendor/lucide.min.js',
   './assets/vendor/libsodium-wrappers.mjs',
@@ -190,7 +191,7 @@ self.addEventListener('fetch', event => {
   // Never cache counters or GitHub API traffic. A plaintext access token is
   // never read from or written to a repository file — the website copy is
   // encrypted — and GitHub Actions secret traffic is network-only as well.
-  if (url.hostname.includes('abacus') || url.hostname === 'api.github.com') return;
+  if (url.hostname.includes('abacus') || url.hostname === 'api.github.com' || url.hostname.includes('supabase.co') || url.hostname.includes('supabase.in')) return;
 
   // Cross-origin requests (including the Office viewer) go straight to the
   // network. The service worker can only safely manage first-party assets.

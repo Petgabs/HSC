@@ -15,6 +15,7 @@
     "dev": "node scripts/dev-server.mjs"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "alpinejs": "^3.14.9",
     "axe-core": "^4.10.2",
     "jsdom": "^25.0.1",
