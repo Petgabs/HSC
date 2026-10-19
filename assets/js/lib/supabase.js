@@ -265,6 +265,112 @@ export async function readSupabasePresence(bucketKeys) {
   }
 }
 
+// ---------- Admin auth (passwords now in Supabase) ----------
+
+export async function authenticateSupabaseAdmin(username, password) {
+  if (!isSupabaseEnabled()) return null;
+  try {
+    const res = await supabaseFetch('/rest/v1/rpc/hsc_authenticate', {
+      method: 'POST',
+      body: JSON.stringify({ p_username: username, p_password: password })
+    });
+    if (!res.ok) throw new Error(`auth ${res.status}`);
+    const data = await res.json();
+    // RPC returns jsonb {success, username, role}
+    if (data && typeof data.success === 'boolean') return data;
+    return null;
+  } catch (error) {
+    console.warn('[supabase] authenticate failed', error);
+    return null;
+  }
+}
+
+export async function authenticateSupabaseMaster(password) {
+  return authenticateSupabaseAdmin('master', password);
+}
+
+export async function rotateSupabasePassword(username, currentPassword, newSalt, newHash) {
+  if (!isSupabaseEnabled()) return null;
+  try {
+    const res = await supabaseFetch('/rest/v1/rpc/hsc_rotate_password', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_username: username,
+        p_current_password: currentPassword,
+        p_new_salt: newSalt,
+        p_new_hash: newHash
+      })
+    });
+    if (!res.ok) throw new Error(`rotate ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.warn('[supabase] rotatePassword failed', error);
+    return null;
+  }
+}
+
+export async function createSupabaseAdminAccount(username, role, salt, hash) {
+  if (!isSupabaseEnabled()) return null;
+  try {
+    const res = await supabaseFetch('/rest/v1/rpc/hsc_create_admin_account', {
+      method: 'POST',
+      body: JSON.stringify({ p_username: username, p_role: role, p_salt: salt, p_hash: hash })
+    });
+    if (!res.ok) throw new Error(`create ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.warn('[supabase] createAccount failed', error);
+    return null;
+  }
+}
+
+// ---------- Supabase Storage (website cloud files mirror) ----------
+
+export function getSupabaseFilePublicUrl(path) {
+  if (!isSupabaseEnabled()) return null;
+  const { url } = supabaseConfig();
+  const clean = String(path || '').replace(/^\/+/, '');
+  return `${url}/storage/v1/object/public/hsc-files/${encodeURIComponent(clean).replace(/%2F/g, '/')}`;
+}
+
+export async function uploadSupabaseFile(path, bytes, contentType = 'application/octet-stream') {
+  if (!isSupabaseEnabled()) return null;
+  try {
+    const clean = String(path || '').replace(/^\/+/, '');
+    const res = await supabaseFetch(`/storage/v1/object/hsc-files/${clean}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'x-upsert': 'true',
+        // anon key already in supabaseHeaders; storage needs dup headers
+        apikey: supabaseConfig().anonKey,
+        Authorization: `Bearer ${supabaseConfig().anonKey}`
+      },
+      body: bytes
+    });
+    // storage returns {Key} or {path}
+    if (!res.ok) throw new Error(`storage upload ${res.status}`);
+    return true;
+  } catch (error) {
+    console.warn('[supabase] uploadFile failed', error);
+    return null;
+  }
+}
+
+export async function deleteSupabaseFile(path) {
+  if (!isSupabaseEnabled()) return false;
+  try {
+    const res = await supabaseFetch('/storage/v1/object/hsc-files', {
+      method: 'DELETE',
+      body: JSON.stringify({ prefixes: [String(path || '').replace(/^\/+/, '')] })
+    });
+    return res.ok;
+  } catch (error) {
+    console.warn('[supabase] deleteFile failed', error);
+    return false;
+  }
+}
+
 // ---------- Admin activity ----------
 
 export async function recordSupabaseLogin(userName) {

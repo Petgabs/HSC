@@ -14,6 +14,13 @@
  * digest into this file on GitHub, so the change reaches every device when
  * GitHub Pages finishes deploying.
  *
+ * Since Nov 2025 the same credentials are also mirrored server-side in Supabase
+ * `hsc_admin_accounts` (hsc-admin + master) and verified via RPC
+ * `hsc_authenticate`/`hsc_verify_admin` with `SECURITY DEFINER` so hashes never
+ * leave the DB. The site tries Supabase first and falls back to this file when
+ * offline or when Supabase is unreachable, so this file remains the offline
+ * backup and source for GitHub Pages deploys.
+ *
  * Never put a GitHub token in this file. The administrator pastes a token in
  * Settings; the site encrypts it for a one-time GitHub Actions repository
  * secret, and remembers it in this browser's storage on that device so the
@@ -69,7 +76,7 @@ export const SITE_CONFIG = Object.freeze({
   storage: Object.freeze({
     quotaBytes: 1_000_000_000,
     label: 'GitHub Pages allowance',
-    note: 'GitHub Pages publishes a site of up to 1 GB. Files live in the apps/ folder of this repository.'
+    note: 'Files live in the apps/ folder of this repository and are mirrored to the Supabase Storage bucket hsc-files (public). GitHub Pages publishes a site of up to 1 GB.'
   })
 });
 

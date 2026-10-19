@@ -37,7 +37,8 @@ import {
   isSupabaseEnabled, getSupabaseConfig, fetchSupabaseResources, getSupabaseCounters, getSupabaseFileTotals,
   incrementSupabaseCounter, recordSupabaseVisit, recordSupabaseDownload, heartbeatSupabasePresence,
   readSupabasePresence, recordSupabaseLogin, recordSupabaseUpload, getSupabaseAdminActivity,
-  resourcesToLibrary, countersToStatsRecord
+  resourcesToLibrary, countersToStatsRecord, authenticateSupabaseAdmin, authenticateSupabaseMaster,
+  rotateSupabasePassword, createSupabaseAdminAccount, uploadSupabaseFile, getSupabaseFilePublicUrl, deleteSupabaseFile
 } from './lib/supabase.js';
 import { interfaceModeForViewport } from './lib/responsive.js';
 import {
@@ -178,6 +179,17 @@ async function sha256Hex(value) {
 }
 
 async function verifyConfiguredAdmin(username, password) {
+  // Supabase is now source of truth — verify server-side so hashes never leave DB.
+  // Falls back to shipped config.js when Supabase is unreachable or disabled (offline, test).
+  if (isSupabaseEnabled()) {
+    try {
+      const auth = await authenticateSupabaseAdmin(String(username || '').trim(), String(password || ''));
+      if (auth && typeof auth.success === 'boolean') {
+        return { ok: Boolean(auth.success), configurationMissing: false, source: 'supabase', role: auth.role || 'admin' };
+      }
+    } catch {}
+    // Network failure → fall through to local check
+  }
   const configured = SITE_CONFIG.admin;
   if (!configured?.username || !configured?.salt || !configured?.passwordHash) {
     return { ok: false, configurationMissing: true };
@@ -185,7 +197,7 @@ async function verifyConfiguredAdmin(username, password) {
   const usernameMatches = String(username).trim() === configured.username;
   const candidate = await sha256Hex(`${configured.salt}:${password}`);
   const expected = String(configured.passwordHash).trim().toLowerCase();
-  return { ok: usernameMatches && candidate === expected, configurationMissing: false };
+  return { ok: usernameMatches && candidate === expected, configurationMissing: false, source: 'local' };
 }
 
 /**
@@ -194,13 +206,21 @@ async function verifyConfiguredAdmin(username, password) {
  * the plain password.
  */
 async function verifyConfiguredMaster(password) {
+  if (isSupabaseEnabled()) {
+    try {
+      const auth = await authenticateSupabaseMaster(String(password || ''));
+      if (auth && typeof auth.success === 'boolean') {
+        return { ok: Boolean(auth.success), configurationMissing: false, source: 'supabase' };
+      }
+    } catch {}
+  }
   const configured = readMasterGate();
   if (!configured?.salt || !configured?.passwordHash) {
     return { ok: false, configurationMissing: true };
   }
   const candidate = await sha256Hex(`${configured.salt}:${password}`);
   const expected = String(configured.passwordHash).trim().toLowerCase();
-  return { ok: candidate === expected, configurationMissing: false };
+  return { ok: candidate === expected, configurationMissing: false, source: 'local' };
 }
 
 /** Fresh 32-character hex salt for a rotated password. */
@@ -2545,7 +2565,10 @@ function schoolCloud() {
           owner: target.owner, repo: target.name, branch,
           token: this.githubAuth.activeToken, path: item.path
         });
-        if (isSupabaseEnabled()) deleteSupabaseResource(item.path).catch(() => {});
+        if (isSupabaseEnabled()) {
+          deleteSupabaseResource(item.path).catch(() => {});
+          deleteSupabaseFile(item.path).catch(() => {});
+        }
         // Drop the file's saved download total from the shared GitHub record
         // so it stops appearing in statistics after the next Pages deploy.
         // The live Abacus counter itself cannot be deleted: counters created
@@ -2825,7 +2848,7 @@ function schoolCloud() {
           onProgress: progress => this.applyUploadProgress(progress)
         });
         this.uploadResult = { ...result, fileSize: bytes.length };
-        // Mirror to Supabase hsc_resources when enabled — non-blocking, GitHub remains source of truth
+        // Mirror to Supabase hsc_resources + Storage when enabled — non-blocking, GitHub remains source of truth
         if (isSupabaseEnabled()) {
           upsertSupabaseResource({
             path: result.path,
@@ -2848,6 +2871,9 @@ function schoolCloud() {
             sha256: digest || '',
             download_url: result.downloadUrl || result.path
           }).catch(() => {});
+          // Website cloud files now also live in Supabase Storage bucket hsc-files (public, mirrors GitHub apps/)
+          const ct = this.draftFile?.type || (String(result.name).toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
+          uploadSupabaseFile(result.path, bytes, ct).catch(() => {});
         }
 
         // Show the new resource on this device immediately; the published
@@ -3240,6 +3266,30 @@ function schoolCloud() {
         this.rememberAdminCredentials({ replaces: signatureBefore, admin, master });
         applyAdminGate(admin);
         if (master) applyMasterGate(master);
+        // Mirror rotation to Supabase hsc_admin_accounts (best-effort, server verifies current password)
+        if (isSupabaseEnabled()) {
+          try {
+            const sess = this.sessionPasswords?.() || { admin: '', master: '' };
+            if (wantsNewPassword) {
+              const cur = String(sess.admin || this.loginForm?.password || '');
+              if (cur) await rotateSupabasePassword(currentAdmin.username, cur, admin.salt, admin.passwordHash);
+              // Username changed without password: ensure new name exists in Supabase as well
+              if (username !== currentAdmin.username) {
+                await createSupabaseAdminAccount(username, 'admin', admin.salt, admin.passwordHash).catch(() => {});
+              }
+            } else if (username !== currentAdmin.username) {
+              await createSupabaseAdminAccount(username, 'admin', admin.salt, admin.passwordHash).catch(() => {});
+            }
+            if (wantsNewMaster) {
+              const curMaster = String(sess.master || '');
+              if (curMaster) await rotateSupabasePassword('master', curMaster, master.salt, master.passwordHash);
+              else {
+                // No session master — fall back to direct create (requires service_role, may no-op for anon)
+                await createSupabaseAdminAccount('master', 'master', master.salt, master.passwordHash).catch(() => {});
+              }
+            }
+          } catch {}
+        }
         try { sessionStorage.setItem(ADMIN_LOGIN_SESSION_KEY, username); } catch { /* Current tab stays signed in. */ }
         // The stored token is locked with these passwords, so a rotation has
         // to re-lock it — otherwise the website copy would stop opening on
