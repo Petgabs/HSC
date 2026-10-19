@@ -341,5 +341,22 @@
     "version": "1.0",
     "addedAt": "2026-10-06T09:12:00.362Z",
     "bytes": 892777
+  },
+  "apps/Night-Study-Schedule-Viewer (8).html": {
+    "title": "Night Study Schedule Viewer (8)",
+    "subject": "Others",
+    "years": [
+      10
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-19T00:27:00.217Z",
+    "sha256": "e16272461d774eea6345797521dd665eabd0b4147ba93617494da8d371715a90",
+    "bytes": 2487041
   }
 }
