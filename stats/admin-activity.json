@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-30T17:02:25.300Z",
+  "updatedAt": "2026-10-30T17:10:22.908Z",
   "logins": [
     {
       "at": "2026-10-30T17:02:25.299Z",
@@ -101,6 +101,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-30T17:10:22.906Z",
+      "path": "apps/Simple_Interest_AP_HSC.mp4",
+      "name": "Simple_Interest_AP_HSC.mp4",
+      "title": "Simple Interest AP HSC",
+      "bytes": 18395714,
+      "subject": "Mathematics",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-19T00:27:12.978Z",
       "path": "apps/Night-Study-Schedule-Viewer (8).html",
