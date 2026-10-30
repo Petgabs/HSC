@@ -97,7 +97,7 @@ describe('automatic Abacus-to-GitHub snapshots', () => {
   it('discovers supported, top-level files from the published apps directory', () => {
     const paths = listTrackedAppPaths();
     expect(paths).toContain('apps/Blacktown Boys 2026 w. sol.pdf');
-    expect(paths.every(path => /^apps\/[^/]+\.(?:html?|pdf|docx?|xlsx?|pptx?)$/i.test(path))).toBe(true);
+    expect(paths.every(path => /^apps\/[^/]+\.(?:html?|pdf|mp4|docx?|xlsx?|pptx?)$/i.test(path))).toBe(true);
   });
 
   it('snapshots the visitor and each file total, preserving saved values on read failure', async () => {
