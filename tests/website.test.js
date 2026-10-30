@@ -132,6 +132,20 @@ describe('School Cloud release configuration', () => {
     expect(worker).toContain("request.headers.has('range')");
   });
 
+  it('features the newest video and presents older videos as thumbnail cards', async () => {
+    const [html, app] = await Promise.all([read('../index.html'), read('../assets/js/app.js')]);
+    const searchSection = html.slice(html.indexOf('id="search-heading"'), html.indexOf('<!-- Error state -->'));
+    expect(searchSection).toContain('id="featured-video-player"');
+    expect(searchSection).toContain('controls playsinline preload="metadata"');
+    expect(html).toContain('aria-labelledby="videos-heading"');
+    expect(html).toContain('@loadeddata="captureVideoThumbnail($event, video.id)"');
+    expect(html).toContain(':src="videoThumbnails[video.id]?.src || \'\'"');
+    expect(html).toContain('@click="selectFeaturedVideo(video)"');
+    expect(app).toContain('get latestVideo() { return this.videos[0] || null; }');
+    expect(app).toContain('get videoArchive()');
+    expect(app).toContain('formatVideoDuration(video.duration)');
+  });
+
   it('generates apps.json with precedence-safe Liquid and baseurl-proof URLs', async () => {
     const template = await read('../apps.json');
     // Liquid gives and/or no precedence in one condition, so the path and

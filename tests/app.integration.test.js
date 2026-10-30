@@ -32,11 +32,15 @@ describe('School Cloud page integration', () => {
     window.sessionStorage.setItem('schoolcloud.githubToken', 'stale-token-for-test-only');
     const manifest = [
       { type: 'file', name: 'Year 12 algebra.html', path: 'apps/Year 12 algebra.html', download_url: 'https://raw.githubusercontent.com/Petgabs/HSC/main/apps/Year%2012%20algebra.html' },
-      { type: 'file', name: 'HSC revision.pdf', path: 'apps/HSC revision.pdf', download_url: 'https://raw.githubusercontent.com/Petgabs/HSC/main/apps/HSC%20revision.pdf' }
+      { type: 'file', name: 'HSC revision.pdf', path: 'apps/HSC revision.pdf', download_url: 'https://raw.githubusercontent.com/Petgabs/HSC/main/apps/HSC%20revision.pdf' },
+      { type: 'file', name: 'Quadratics lesson.mp4', path: 'apps/Quadratics lesson.mp4', download_url: 'https://raw.githubusercontent.com/Petgabs/HSC/main/apps/Quadratics%20lesson.mp4' },
+      { type: 'file', name: 'Calculus lesson.mp4', path: 'apps/Calculus lesson.mp4', download_url: 'https://raw.githubusercontent.com/Petgabs/HSC/main/apps/Calculus%20lesson.mp4' }
     ];
     const library = {
       'apps/Year 12 algebra.html': { title: 'Interactive Algebra', subject: 'Mathematics', years: [12], tags: ['practice'] },
-      'apps/HSC revision.pdf': { title: 'HSC Revision Notes', subject: 'Mathematics', years: [12] }
+      'apps/HSC revision.pdf': { title: 'HSC Revision Notes', subject: 'Mathematics', years: [12] },
+      'apps/Quadratics lesson.mp4': { title: 'Quadratics: complete the square', subject: 'Mathematics', years: [11], addedAt: '2026-02-01T00:00:00.000Z' },
+      'apps/Calculus lesson.mp4': { title: 'Calculus exam walkthrough', subject: 'Mathematics', years: [12], addedAt: '2026-06-01T00:00:00.000Z' }
     };
     let savedStatsRecord = null;
     let savedPublisherSecret = false;
@@ -100,11 +104,29 @@ describe('School Cloud page integration', () => {
       const state = window.document.body._x_dataStack?.[0];
       expect(window.Alpine?.version).toBeTruthy();
       expect(state).toBeTruthy();
-      expect(state.apps).toHaveLength(2);
+      expect(state.apps).toHaveLength(4);
       expect(state.miniApps).toHaveLength(1);
-      expect(state.resources).toHaveLength(1);
+      expect(state.resources).toHaveLength(3);
+      expect(state.videos).toHaveLength(2);
+      expect(state.latestVideo.fileName).toBe('Calculus lesson.mp4');
+      expect(state.featuredVideo.id).toBe(state.latestVideo.id);
+      expect(state.videoArchive.map(video => video.fileName)).toEqual(['Quadratics lesson.mp4']);
+      expect(state.facets.videos).toBe(2);
+      state.filters.kind = 'video';
+      expect(state.filteredVideos).toHaveLength(2);
+      expect(state.filteredResources).toHaveLength(0);
+      expect(state.resultCount).toBe(2);
+      state.filters.query = 'calculus';
+      expect(state.filteredVideos.map(video => video.fileName)).toEqual(['Calculus lesson.mp4']);
+      expect(state.showFeaturedVideo).toBe(true);
+      expect(state.videoArchive).toHaveLength(0);
+      state.filters.query = 'no matching video';
+      expect(state.showFeaturedVideo).toBe(false);
+      expect(state.resultCount).toBe(0);
+      state.filters.query = '';
+      state.filters.kind = '';
       expect(state.stats.visitors).toBe(41);
-      expect(state.downloadsOf(state.apps[0])).toBe(7);
+      expect(state.downloadsOf(state.apps.find(item => item.fileName === 'Year 12 algebra.html'))).toBe(7);
       expect(state.stats.backend).toBe('abacus');
       expect(state.interfaceMode).toBe('tablet');
       expect(window.document.body.dataset.interfaceMode).toBe('tablet');

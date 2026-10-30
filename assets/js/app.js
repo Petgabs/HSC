@@ -325,6 +325,8 @@ function schoolCloud() {
     libraryItems: [],
     libraryMetadata: {},
     metadataEntries: 0,
+    featuredVideoId: '',
+    videoThumbnails: {},
     dataLoadError: '',
     stats: {
       visitors: 0,
@@ -499,6 +501,32 @@ function schoolCloud() {
     get apps() { return this.libraryItems; },
     get miniApps() { return this.apps.filter(item => ['html', 'htm'].includes(fileExtension(item).toLowerCase())); },
     get resources() { return this.apps.filter(item => !['html', 'htm'].includes(fileExtension(item).toLowerCase())); },
+    get videos() {
+      return sortResources(this.apps.filter(item => fileExtension(item).toLowerCase() === 'mp4'), 'newest');
+    },
+    get latestVideo() { return this.videos[0] || null; },
+    get featuredVideo() {
+      return this.videos.find(video => video.id === this.featuredVideoId) || this.latestVideo;
+    },
+    get showFeaturedVideo() {
+      const item = this.featuredVideo;
+      if (!item || ['app', 'document'].includes(this.filters.kind)) return false;
+      if (!searchResources([item], this.filters.query).length) return false;
+      if (this.filters.subject && item.meta.subject !== this.filters.subject) return false;
+      if (this.filters.year && !(item.meta.years || []).map(String).includes(String(this.filters.year))) return false;
+      return true;
+    },
+    get filteredVideos() {
+      if (['app', 'document'].includes(this.filters.kind)) return [];
+      let result = searchResources(this.videos, this.filters.query);
+      if (this.filters.subject) result = result.filter(item => item.meta.subject === this.filters.subject);
+      if (this.filters.year) result = result.filter(item => (item.meta.years || []).map(String).includes(String(this.filters.year)));
+      return this.sortByLiveState(result);
+    },
+    get videoArchive() {
+      const latestId = this.latestVideo?.id;
+      return this.filteredVideos.filter(video => video.id !== latestId);
+    },
     get localAppCount() { return this.localDrafts.length; },
     get cloudAppCount() { return this.apps.length; },
     get recentUploadCount() { return this.apps.filter(item => calculateAgeDays(item?.addedAt || item?.meta?.addedAt) <= 30).length; },
@@ -582,7 +610,12 @@ function schoolCloud() {
       const subjects = countBy(this.apps, item => item.meta.subject);
       const years = new Map();
       for (const item of this.apps) for (const year of item.meta.years || []) years.set(Number(year), (years.get(Number(year)) || 0) + 1);
-      return { subjects, years, apps: this.miniApps.length, documents: this.resources.length };
+      return {
+        subjects, years,
+        apps: this.miniApps.length,
+        documents: this.resources.filter(item => fileExtension(item).toLowerCase() !== 'mp4').length,
+        videos: this.videos.length
+      };
     },
     get subjectShortcuts() {
       const popular = [...this.facets.subjects.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
@@ -601,22 +634,23 @@ function schoolCloud() {
     },
     get filteredMiniApps() {
       let result = searchResources(this.miniApps, this.filters.query);
-      if (this.filters.kind === 'document') return [];
+      if (['document', 'video'].includes(this.filters.kind)) return [];
       if (this.filters.subject) result = result.filter(item => item.meta.subject === this.filters.subject);
       if (this.filters.year) result = result.filter(item => (item.meta.years || []).map(String).includes(String(this.filters.year)));
       return this.sortByLiveState(result);
     },
     get filteredResources() {
-      let result = searchResources(this.resources, this.filters.query);
-      if (this.filters.kind === 'app') return [];
+      if (['app', 'video'].includes(this.filters.kind)) return [];
+      const documents = this.resources.filter(item => fileExtension(item).toLowerCase() !== 'mp4');
+      let result = searchResources(documents, this.filters.query);
       if (this.filters.subject) result = result.filter(item => item.meta.subject === this.filters.subject);
       if (this.filters.year) result = result.filter(item => (item.meta.years || []).map(String).includes(String(this.filters.year)));
       return this.sortByLiveState(result);
     },
-    get resultCount() { return this.filteredMiniApps.length + this.filteredResources.length; },
+    get resultCount() { return this.filteredMiniApps.length + this.filteredResources.length + this.filteredVideos.length; },
     get filterSummary() {
       const parts = [];
-      if (this.filters.kind) parts.push(this.filters.kind === 'app' ? 'Mini apps' : 'Documents');
+      if (this.filters.kind) parts.push(({ app: 'Mini apps', document: 'Documents', video: 'Videos' })[this.filters.kind] || 'Resources');
       if (this.filters.subject) parts.push(this.filters.subject);
       if (this.filters.year) parts.push(`Year ${this.filters.year}`);
       if (this.filters.query) parts.push(`“${this.filters.query}”`);
@@ -2295,6 +2329,79 @@ function schoolCloud() {
       this.filters.subject = subject;
       this.currentView = 'library';
       document.getElementById('library-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    selectFeaturedVideo(video) {
+      if (!video?.id) return;
+      this.featuredVideoId = video.id;
+      this.$nextTick(() => {
+        const player = document.getElementById('featured-video-player');
+        if (!player) return;
+        player.load();
+        player.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+    showLatestVideo() {
+      this.featuredVideoId = '';
+      this.$nextTick(() => {
+        const player = document.getElementById('featured-video-player');
+        if (!player) return;
+        player.load();
+        player.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+    formatVideoDuration(seconds) {
+      const duration = Number(seconds);
+      if (!Number.isFinite(duration) || duration < 0) return 'MP4';
+      const total = Math.floor(duration);
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const remainder = total % 60;
+      return hours
+        ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+        : `${minutes}:${String(remainder).padStart(2, '0')}`;
+    },
+    captureVideoThumbnail(event, videoId) {
+      const video = event?.currentTarget;
+      if (!video || this.videoThumbnails[videoId] || video.dataset.thumbnailCapture === 'started') return;
+      video.dataset.thumbnailCapture = 'started';
+      const capture = () => {
+        if (!video.videoWidth || !video.videoHeight) return;
+        try {
+          const scale = Math.min(1, 640 / video.videoWidth);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+          const context = canvas.getContext('2d');
+          if (!context) return;
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const poster = canvas.toDataURL('image/jpeg', 0.72);
+          this.videoThumbnails[videoId] = {
+            src: poster,
+            duration: this.formatVideoDuration(video.duration)
+          };
+          this.$nextTick(() => {
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+          });
+        } catch {
+          // Cross-origin media or a device without canvas support keeps the
+          // paused video frame as a thumbnail fallback instead.
+        }
+      };
+      const seekTime = Number.isFinite(video.duration) && video.duration > 2
+        ? Math.min(1.25, video.duration * 0.12)
+        : 0;
+      if (seekTime > 0.1 && Math.abs(video.currentTime - seekTime) > 0.1) {
+        video.addEventListener('seeked', capture, { once: true });
+        try {
+          video.currentTime = seekTime;
+          return;
+        } catch {
+          video.removeEventListener('seeked', capture);
+        }
+      }
+      capture();
     },
     setKind(kind) { this.filters.kind = this.filters.kind === kind ? '' : kind; },
     setSubject(subject) { this.filters.subject = this.filters.subject === subject ? '' : subject; },
