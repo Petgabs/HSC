@@ -10,7 +10,7 @@
     <!-- Defence in depth for the static deployment. Alpine's distributed
          runtime needs unsafe-eval; no inline script is permitted. Uploaded
          HTML is still rendered in a sandboxed iframe without same-origin. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.github.com https://abacus.jasoncameron.dev; frame-src 'self' blob: https://view.officeapps.live.com; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://api.github.com https://abacus.jasoncameron.dev; frame-src 'self' blob: https://view.officeapps.live.com; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
 
     <!-- Locally bundled styles and scripts: no third-party CDN is required,
          so the site keeps working on restricted school networks and offline. -->
@@ -1521,7 +1521,7 @@
                 <div class="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h3 class="font-bold text-slate-900">Documents &amp; Resources</h3>
-                        <p class="text-xs text-slate-400 mt-0.5" x-text="resources.length + (resources.length === 1 ? ' downloadable file (PDF, Word, Excel, PowerPoint)' : ' downloadable files (PDF, Word, Excel, PowerPoint)')"></p>
+                        <p class="text-xs text-slate-400 mt-0.5" x-text="resources.length + (resources.length === 1 ? ' downloadable file (PDF, MP4 video, Word, Excel, PowerPoint)' : ' downloadable files (PDF, MP4 video, Word, Excel, PowerPoint)')"></p>
                         <p class="mt-1 text-xs text-slate-500">Filter by subject to find a file, then use that file’s Delete button.</p>
                     </div>
                     <div class="flex items-center gap-3">
@@ -1568,6 +1568,11 @@
                             class="px-2.5 py-1 rounded-full font-medium transition-colors focus-ring"
                             :class="dashboardResourceType === 'ppt' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'">
                         PowerPoint (<span x-text="dashboardResourceCounts.ppt"></span>)
+                    </button>
+                    <button type="button" @click="setDashboardResourceType('video')"
+                            class="px-2.5 py-1 rounded-full font-medium transition-colors focus-ring"
+                            :class="dashboardResourceType === 'video' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'">
+                        Video (<span x-text="dashboardResourceCounts.video"></span>)
                     </button>
                     <button type="button" @click="setDashboardResourceType('cloud')"
                             class="px-2.5 py-1 rounded-full font-medium transition-colors focus-ring"
@@ -1964,7 +1969,7 @@
                              @dragover.prevent="$event.dataTransfer.dropEffect = 'copy'"
                              @drop.prevent="handleFileDrop($event)">
                             <input id="resource-file" type="file" @change="handleFileChange" :disabled="submitting"
-                                   accept=".html,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                                   accept=".html,.pdf,.mp4,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                                    :class="submitting ? 'cursor-not-allowed' : 'cursor-pointer'"
                                    class="absolute inset-0 w-full h-full opacity-0">
                             <div class="space-y-2 pointer-events-none">
@@ -1973,7 +1978,7 @@
                                     <span class="font-semibold text-indigo-600">Click to upload</span> or drag and drop
                                 </div>
                                 <p class="text-[11px] font-medium text-emerald-700">Every file is checked before it is published: real file type, embedded programs or macros, unsafe HTML and a SHA-256 fingerprint.</p>
-                                <p class="text-xs text-slate-400" x-text="draftFile ? 'Selected: ' + draftFile.name : 'PDF, Word, Excel, PowerPoint or HTML — up to 50 MB'"></p>
+                                <p class="text-xs text-slate-400" x-text="draftFile ? 'Selected: ' + draftFile.name : 'PDF, MP4 video, Word, Excel, PowerPoint or HTML — up to 50 MB'"></p>
                                 <p class="text-xs font-medium text-slate-500" x-show="draftFile" x-text="draftFile ? formatBytes(draftFile.size) + ' · ' + kindLabel({fileName: draftFile.name}) : ''"></p>
                             </div>
                         </div>
@@ -2346,7 +2351,11 @@
                             <i data-lucide="file-search" class="w-3.5 h-3.5" aria-hidden="true"></i>
                             File preview
                         </div>
-                        <template x-if="draftFilePreview">
+                        <template x-if="draftFilePreview?.type === 'video'">
+                            <video :src="draftFilePreview.src" :aria-label="draftFilePreview.label" controls playsinline preload="metadata"
+                                   class="w-full h-80 bg-slate-950"></video>
+                        </template>
+                        <template x-if="draftFilePreview && draftFilePreview.type !== 'video'">
                             <iframe :src="draftFilePreview.src" :sandbox="draftFilePreview.sandbox" :title="draftFilePreview.label"
                                     referrerpolicy="no-referrer"
                                     class="w-full h-80 border-0 bg-white"></iframe>
@@ -2360,7 +2369,7 @@
                             <p class="text-sm text-slate-500 mt-2">Choose a file to see the automatic preview.</p>
                         </div>
                         <p class="px-4 py-2 text-[11px] text-slate-400 border-t border-slate-100 bg-slate-50">
-                            Previews run in a sandboxed frame. This is exactly what students will see.
+                            Document previews run in a sandboxed frame; MP4 videos use the browser's built-in player.
                         </p>
                     </div>
                 </aside>
@@ -2735,9 +2744,15 @@
                         </button>
                     </div>
 
-                    <template x-if="preview.open && preview.descriptor && !errors.preview">
-                        <iframe x-show="!errors.preview"
-                                :src="preview.descriptor.src || null"
+                    <template x-if="preview.open && preview.descriptor?.type === 'video' && !errors.preview">
+                        <video :src="preview.descriptor.src" :aria-label="preview.descriptor.label"
+                               controls playsinline preload="metadata"
+                               @loadedmetadata="onPreviewLoad()"
+                               @error="onPreviewError()"
+                               class="w-full h-full bg-slate-950 object-contain"></video>
+                    </template>
+                    <template x-if="preview.open && preview.descriptor && preview.descriptor.type !== 'video' && !errors.preview">
+                        <iframe :src="preview.descriptor.src || null"
                                 :srcdoc="preview.descriptor.srcdoc || null"
                                 :sandbox="preview.descriptor.sandbox"
                                 :title="preview.descriptor.label"
@@ -2749,7 +2764,7 @@
                 </div>
 
                 <p class="preview-modal__footer px-5 py-2.5 text-[11px] text-slate-400 border-t border-slate-100 bg-white">
-                    Previews run in a sandboxed frame. Download the file for full functionality and offline use.
+                    Document previews run in a sandboxed frame; videos use your browser’s built-in player. Download for offline use.
                 </p>
             </div>
         </div>

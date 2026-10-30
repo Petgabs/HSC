@@ -95,7 +95,7 @@ function isLibraryData(url) {
 }
 
 function isDownloadableFile(url) {
-  return /\/apps\/.+\.(?:html?|pdf|docx?|xlsx?|pptx?)$/i.test(url.pathname);
+  return /\/apps\/.+\.(?:html?|pdf|mp4|docx?|xlsx?|pptx?)$/i.test(url.pathname);
 }
 
 /** Remove cache-busting query strings from data cache keys. */
@@ -219,6 +219,10 @@ self.addEventListener('fetch', event => {
   }
 
   if (isDownloadableFile(url)) {
+    // Native video players request byte ranges to seek and play without
+    // downloading the entire MP4. Let those requests reach the static host
+    // directly; Cache API cannot reliably store or replay 206 partial bodies.
+    if (request.headers.has('range')) return;
     event.respondWith(cacheFirst(request, FILE_CACHE).catch(() => Response.error()));
     return;
   }

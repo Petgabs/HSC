@@ -4,6 +4,9 @@ export function previewDescriptor(item) {
   if (!item?.downloadUrl) return null;
   const extension = fileExtension(item).toLowerCase();
   const source = new URL(item.downloadUrl, globalThis.location?.href || 'https://schoolcloud.invalid/');
+  if (extension === 'mp4') {
+    return { type: 'video', src: source.href, label: `Video preview: ${item.name}` };
+  }
   if (extension === 'pdf') {
     return { src: source.href, sandbox: 'allow-downloads', label: `PDF preview: ${item.name}` };
   }

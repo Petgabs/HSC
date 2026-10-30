@@ -132,9 +132,12 @@ repository; GitHub Pages then makes them available to students.
    computer the administrator signs in on is ready to publish immediately. The
    **Website token storage** panel shows the current state and can save or
    remove that copy at any time.
-4. Use **Upload Resource**, select an HTML, PDF, Word, Excel or PowerPoint file
-   (up to 50 MB), add the metadata, preview it and choose **Publish to GitHub &
-   Website**. The file is inspected first — real file type, embedded programs or
+4. Use **Upload Resource**, select an HTML, PDF, MP4 video, Word, Excel or
+   PowerPoint file (up to 50 MB), add the metadata, preview it and choose
+   **Publish to GitHub & Website**. MP4 videos play in the browser's built-in
+   video player; H.264 video with AAC audio is recommended for broad browser
+   compatibility. Published videos are public, just like the rest of this
+   repository. The file is inspected first — real file type, embedded programs or
    macros, unsafe HTML, size and duplicate names — and the findings appear as a
    checklist on the upload page. Anything with a warning must be acknowledged
    before the publish button unlocks, and anything unsafe is refused before a
@@ -454,5 +457,7 @@ build output so GitHub Pages can serve the site without a build step.
 - `sw.js` — offline shell/data/download caching. Abacus and GitHub API traffic
   is always network-only.
 
-Supported extensions: `.html`, `.htm`, `.pdf`, `.doc`, `.docx`, `.xls`,
-`.xlsx`, `.ppt`, `.pptx`.
+Supported extensions: `.html`, `.htm`, `.pdf`, `.mp4`, `.doc`, `.docx`,
+`.xls`, `.xlsx`, `.ppt`, `.pptx`. Videos are checked for an MP4 `ftyp` header,
+can be previewed with native browser controls, and remain subject to the existing
+50 MB upload limit and public-repository storage constraints.

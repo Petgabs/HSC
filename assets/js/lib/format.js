@@ -51,6 +51,7 @@ export function fileIcon(itemOrName) {
   const ext = fileExtension(itemOrName).toLowerCase();
   if (ext === 'html' || ext === 'htm') return 'code-2';
   if (ext === 'pdf') return 'file-text';
+  if (ext === 'mp4') return 'film';
   if (['doc', 'docx'].includes(ext)) return 'file-text';
   if (['xls', 'xlsx'].includes(ext)) return 'table-2';
   if (['ppt', 'pptx'].includes(ext)) return 'presentation';
@@ -60,7 +61,7 @@ export function fileIcon(itemOrName) {
 export function kindLabel(itemOrName) {
   const ext = fileExtension(itemOrName).toLowerCase();
   const labels = {
-    html: 'Interactive mini app', htm: 'Interactive mini app', pdf: 'PDF document',
+    html: 'Interactive mini app', htm: 'Interactive mini app', pdf: 'PDF document', mp4: 'MP4 video',
     doc: 'Word document', docx: 'Word document', xls: 'Excel workbook',
     xlsx: 'Excel workbook', ppt: 'PowerPoint presentation', pptx: 'PowerPoint presentation'
   };

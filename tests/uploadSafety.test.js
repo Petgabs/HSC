@@ -22,6 +22,14 @@ function crc32(data) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+function makeMp4Header(brand = 'isom') {
+  const header = new Uint8Array(16);
+  header.set([0, 0, 0, 16], 0);
+  header.set(text('ftyp'), 4);
+  header.set(text(brand), 8);
+  return header;
+}
+
 function uint16(value) { return [value & 0xff, (value >>> 8) & 0xff]; }
 function uint32(value) { return [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]; }
 
@@ -73,6 +81,7 @@ describe('file type verification', () => {
     expect(detectFileKind(new Uint8Array(0))).toBe('empty');
     expect(detectFileKind(bytesOf(0x00, 0x01, 0x02, 0x03))).toBe('binary');
     expect(expectedKind('Notes.PDF')).toBe('pdf');
+    expect(expectedKind('clip.MP4')).toBe('mp4');
     expect(expectedKind('sheet.xlsx')).toBe('zip-office');
     expect(expectedKind('notes.txt')).toBe('');
   });
@@ -83,6 +92,18 @@ describe('file type verification', () => {
     expect(report.errors).toEqual([]);
     expect(report.digest).toMatch(/^[a-f0-9]{64}$/);
     expect(report.checks.map(check => check.id)).toContain('digest');
+  });
+
+  it('accepts MP4 video headers and rejects mismatched MP4 content', async () => {
+    expect(detectFileKind(makeMp4Header('isom'))).toBe('mp4');
+    const report = await inspectUpload({ name: 'lesson.mp4', bytes: makeMp4Header('mp42') });
+    expect(report.ok).toBe(true);
+    expect(report.kind).toBe('mp4');
+    expect(report.digest).toMatch(/^[a-f0-9]{64}$/);
+
+    const renamed = await inspectUpload({ name: 'fake.mp4', bytes: makeMp4Header('not!') });
+    expect(renamed.ok).toBe(false);
+    expect(renamed.errors.join(' ')).toContain('not MP4');
   });
 
   it('refuses a file whose bytes do not match its extension', async () => {
@@ -105,7 +126,7 @@ describe('file type verification', () => {
   it('refuses an unsupported extension', async () => {
     const report = await inspectUpload({ name: 'installer.exe', bytes: text('MZ') });
     expect(report.ok).toBe(false);
-    expect(report.errors.join(' ')).toContain('not an HTML, PDF, Word, Excel or PowerPoint file');
+    expect(report.errors.join(' ')).toContain('not an HTML, PDF, MP4 video, Word, Excel or PowerPoint file');
   });
 });
 

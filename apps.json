@@ -15,7 +15,7 @@ permalink: /apps.json
 {% endcomment %}
 {% if file.path contains '/apps/' %}
 {% assign extension = file.extname | downcase %}
-{% if extension == '.html' or extension == '.htm' or extension == '.pdf' or extension == '.doc' or extension == '.docx' or extension == '.xls' or extension == '.xlsx' or extension == '.ppt' or extension == '.pptx' %}
+{% if extension == '.html' or extension == '.htm' or extension == '.pdf' or extension == '.doc' or extension == '.docx' or extension == '.xls' or extension == '.xlsx' or extension == '.ppt' or extension == '.pptx' or extension == '.mp4' %}
   {% unless first_app %},{% endunless %}{
     "type": "file",
     "name": {{ file.name | jsonify }},

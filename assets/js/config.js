@@ -123,5 +123,5 @@ export const SUBJECTS = Object.freeze([
 export const YEAR_LEVELS = Object.freeze([9, 10, 11, 12]);
 
 export const SUPPORTED_EXTENSIONS = Object.freeze([
-  '.html', '.htm', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+  '.html', '.htm', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.mp4'
 ]);
