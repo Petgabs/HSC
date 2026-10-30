@@ -36,7 +36,10 @@ const OLE_HEADER = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const ZIP_LOCAL_HEADER = [0x50, 0x4b, 0x03, 0x04];
 const ZIP_EMPTY_HEADER = [0x50, 0x4b, 0x05, 0x06];
 const PDF_HEADER = '%PDF-';
-const MP4_BRANDS = new Set(['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'MSNV', 'dash']);
+const MP4_BRANDS = new Set([
+  'isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'mp4v', 'mp71',
+  'avc1', 'M4V ', 'M4VH', 'M4VP', 'MSNV', 'F4V ', 'dash'
+]);
 
 const KIND_BY_EXTENSION = {
   pdf: 'pdf',

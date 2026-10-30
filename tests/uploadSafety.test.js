@@ -96,6 +96,7 @@ describe('file type verification', () => {
 
   it('accepts MP4 video headers and rejects mismatched MP4 content', async () => {
     expect(detectFileKind(makeMp4Header('isom'))).toBe('mp4');
+    expect(detectFileKind(makeMp4Header('mp4v'))).toBe('mp4');
     const report = await inspectUpload({ name: 'lesson.mp4', bytes: makeMp4Header('mp42') });
     expect(report.ok).toBe(true);
     expect(report.kind).toBe('mp4');
