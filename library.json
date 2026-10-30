@@ -341,5 +341,22 @@
     "version": "1.0",
     "addedAt": "2026-10-06T09:12:00.362Z",
     "bytes": 892777
+  },
+  "apps/Simple_Interest_AP_HSC.mp4": {
+    "title": "Simple Interest AP HSC",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-30T17:09:37.182Z",
+    "sha256": "ccdd0c0206c232011548afa171da707007e6372431017d45d5cf4adc9e7e8014",
+    "bytes": 18395714
   }
 }
