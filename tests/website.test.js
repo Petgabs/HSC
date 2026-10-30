@@ -121,6 +121,9 @@ describe('School Cloud release configuration', () => {
     ]);
     expect(config).toContain("'.mp4'");
     expect(html).toContain('accept=".html,.pdf,.mp4,.doc,.docx,.xls,.xlsx,.ppt,.pptx"');
+    expect(html).toContain('id="video-resource-file" type="file"');
+    expect(html).toContain('accept=".mp4,video/mp4"');
+    expect(html).toContain('Choose MP4 video');
     expect(html).toContain('<video :src="preview.descriptor.src"');
     expect(html).toContain('controls playsinline preload="metadata"');
     expect(html).toContain('media-src \'self\' blob:');
