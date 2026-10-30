@@ -17,7 +17,7 @@ describe('library metadata', () => {
   });
 
   it('accepts supported classroom file extensions only', () => {
-    for (const file of ['a.html', 'a.htm', 'a.pdf', 'a.docx', 'a.xlsx', 'a.ppt']) expect(isSupportedFile(file)).toBe(true);
+    for (const file of ['a.html', 'a.htm', 'a.pdf', 'a.mp4', 'a.docx', 'a.xlsx', 'a.ppt']) expect(isSupportedFile(file)).toBe(true);
     for (const file of ['a.exe', 'a.zip', 'a.pdf.exe', '../secret.pdf']) expect(isSupportedFile(file)).toBe(false);
   });
 

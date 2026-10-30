@@ -244,11 +244,14 @@ function calculateAgeDays(value) {
 }
 
 function makeDraftPreview(file) {
-  if (!file || !['.pdf', '.html', '.htm'].includes(`.${fileExtension(file.name).toLowerCase()}`)) return null;
+  if (!file || !['.pdf', '.html', '.htm', '.mp4'].includes(`.${fileExtension(file.name).toLowerCase()}`)) return null;
   try {
     const src = URL.createObjectURL(file);
-    const isHtml = ['HTML', 'HTM'].includes(fileExtension(file.name));
+    const extension = fileExtension(file.name).toLowerCase();
+    if (extension === 'mp4') return { type: 'video', src, label: `Video preview of ${file.name}` };
+    const isHtml = ['html', 'htm'].includes(extension);
     return {
+      type: 'document',
       src,
       sandbox: isHtml ? 'allow-scripts allow-forms' : 'allow-downloads',
       label: `${isHtml ? 'HTML' : 'PDF'} preview of ${file.name}`
@@ -632,6 +635,7 @@ function schoolCloud() {
         word: count(item => ['doc', 'docx'].includes(fileExtension(item).toLowerCase())),
         excel: count(item => ['xls', 'xlsx'].includes(fileExtension(item).toLowerCase())),
         ppt: count(item => ['ppt', 'pptx'].includes(fileExtension(item).toLowerCase())),
+        video: count(item => fileExtension(item).toLowerCase() === 'mp4'),
         cloud: count(item => item.source === 'github')
       };
     },
@@ -657,6 +661,7 @@ function schoolCloud() {
       if (type === 'word') result = result.filter(item => ['doc', 'docx'].includes(fileExtension(item).toLowerCase()));
       if (type === 'excel') result = result.filter(item => ['xls', 'xlsx'].includes(fileExtension(item).toLowerCase()));
       if (type === 'ppt') result = result.filter(item => ['ppt', 'pptx'].includes(fileExtension(item).toLowerCase()));
+      if (type === 'video') result = result.filter(item => fileExtension(item).toLowerCase() === 'mp4');
       if (type === 'cloud') result = result.filter(item => item.source === 'github');
       return sortResources(result, 'title');
     },
@@ -2501,7 +2506,7 @@ function schoolCloud() {
       this._inspectSequence += 1;
       if (!file) return;
       if (!isSupportedFile(file.name)) {
-        this.draftErrors.file = 'Use an HTML, PDF, Word, Excel or PowerPoint file.';
+        this.draftErrors.file = 'Use an HTML, PDF, MP4 video, Word, Excel or PowerPoint file.';
         return;
       }
       if (file.size > SITE_CONFIG.maxUploadBytes) {
@@ -2567,7 +2572,7 @@ function schoolCloud() {
         return;
       }
       if (!this.draftFile || this.draftFile.size > SITE_CONFIG.maxUploadBytes) {
-        this.draftErrors.file = 'Files must be 50 MB or smaller.';
+        this.draftErrors.file = `Files must be ${Math.round(SITE_CONFIG.maxUploadBytes / (1024 * 1024))} MB or smaller.`;
         return;
       }
       // Repeated-click and rate protection: the attempt is recorded before any

@@ -115,13 +115,27 @@ describe('School Cloud release configuration', () => {
     expect(publisher).toContain('../../vendor/libsodium-wrappers.mjs');
   });
 
+  it('enables validated MP4 upload, browser playback, CSP access and range-based streaming', async () => {
+    const [html, headers, worker, config] = await Promise.all([
+      read('../index.html'), read('../_headers'), read('../sw.js'), read('../assets/js/config.js')
+    ]);
+    expect(config).toContain("'.mp4'");
+    expect(html).toContain('accept=".html,.pdf,.mp4,.doc,.docx,.xls,.xlsx,.ppt,.pptx"');
+    expect(html).toContain('<video :src="preview.descriptor.src"');
+    expect(html).toContain('controls playsinline preload="metadata"');
+    expect(html).toContain('media-src \'self\' blob:');
+    expect(headers).toContain('media-src \'self\' blob:');
+    expect(worker).toContain('mp4|docx?');
+    expect(worker).toContain("request.headers.has('range')");
+  });
+
   it('generates apps.json with precedence-safe Liquid and baseurl-proof URLs', async () => {
     const template = await read('../apps.json');
     // Liquid gives and/or no precedence in one condition, so the path and
     // extension checks must live in nested blocks with a pure `or` chain.
     expect(template).toContain("{% if file.path contains '/apps/' %}");
     expect(template).not.toMatch(/{% if [^%]*\band\b[^%]*\bor\b[^%]*%}/);
-    expect(template).toMatch(/{% if extension == '\.html' or extension == '\.htm' or .*\.pptx' %}/);
+    expect(template).toMatch(/{% if extension == '\.html' or extension == '\.htm' or .*\.mp4' %}/);
     // Repository-relative URLs resolve under project Pages, custom domains and localhost.
     expect(template).toContain('"download_url": {{ file.path | remove_first: "/" | jsonify }}');
     expect(template).not.toContain('site.baseurl');
