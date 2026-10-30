@@ -138,6 +138,8 @@ describe('School Cloud release configuration', () => {
     expect(searchSection).toContain('id="featured-video-player"');
     expect(searchSection).toContain('controls playsinline preload="metadata"');
     expect(html).toContain('aria-labelledby="videos-heading"');
+    expect(html).toContain('x-show="videos.length > 0 && filters.kind !== \'app\' && filters.kind !== \'document\'"');
+    expect(html).toContain('The newest upload is ready in the player above. Older videos will collect here.');
     expect(html).toContain('@loadeddata="captureVideoThumbnail($event, video.id)"');
     expect(html).toContain(':src="videoThumbnails[video.id]?.src || \'\'"');
     expect(html).toContain('@click="selectFeaturedVideo(video)"');
