@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T01:49:44.028Z",
+  "updatedAt": "2026-10-31T01:58:24.777Z",
   "logins": [
     {
       "at": "2026-10-31T01:49:44.027Z",
@@ -105,6 +105,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T01:58:24.775Z",
+      "path": "apps/Compound_Interest_GP_HSC.mp4",
+      "name": "Compound_Interest_GP_HSC.mp4",
+      "title": "Compound Interest GP HSC",
+      "bytes": 19301824,
+      "subject": "Mathematics",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-30T17:10:22.906Z",
       "path": "apps/Simple_Interest_AP_HSC.mp4",
