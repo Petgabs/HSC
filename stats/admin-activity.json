@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T02:34:43.880Z",
+  "updatedAt": "2026-10-31T02:35:40.963Z",
   "logins": [
     {
       "at": "2026-10-31T02:31:07.059Z",
@@ -113,6 +113,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T02:35:40.962Z",
+      "path": "apps/Sequences_Series_2025-26_Practice_Paper.pdf",
+      "name": "Sequences_Series_2025-26_Practice_Paper.pdf",
+      "title": "Sequences Series 2025-26 SOLUTIONS",
+      "bytes": 3085658,
+      "subject": "Mathematics",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T02:34:43.879Z",
       "path": "apps/Sequences_Series_2025-26_Student_Paper.pdf",
