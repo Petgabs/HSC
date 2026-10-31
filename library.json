@@ -519,5 +519,23 @@
     "addedAt": "2026-10-31T05:57:35.642Z",
     "sha256": "74d474603f509fb8e43b0d017fa36a09eb35338171d3a2948e32109a6e34465c",
     "bytes": 23455631
+  },
+  "apps/Sequences_Series_21_MCQs_Solutions.mp4": {
+    "title": "Sequences Series 21 MCQs Solutions",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T06:49:10.903Z",
+    "sha256": "1783b78249be68ecac52cc66aa4ba0114c339c06b94d86e3430cfe53dff5b88a",
+    "bytes": 23465729
   }
 }
