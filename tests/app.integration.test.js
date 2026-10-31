@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import sodium from 'libsodium-wrappers';
+import { videoWatchCounterKey } from '../assets/js/lib/counters.js';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -113,6 +114,15 @@ describe('School Cloud page integration', () => {
       expect(state.latestVideo.fileName).toBe('Calculus lesson.mp4');
       expect(state.featuredVideo.id).toBe(state.latestVideo.id);
       expect(state.videoArchive.map(video => video.fileName)).toEqual(['Calculus lesson.mp4', 'Quadratics lesson.mp4']);
+      const watchKey = videoWatchCounterKey(state.latestVideo.path);
+      const videoWatchHits = () => fetchMock.mock.calls.filter(([url]) => String(url).includes(`/hit/petgabs-hsc-schoolcloud/${watchKey}`));
+      const player = window.document.getElementById('featured-video-player');
+      player.dispatchEvent(new window.Event('playing'));
+      player.dispatchEvent(new window.Event('playing'));
+      expect(state.countVideoWatch(state.latestVideo)).toBe(false);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(videoWatchHits()).toHaveLength(1);
+      expect(state.videoViewsOf(state.latestVideo)).toBeGreaterThan(0);
       expect(state.facets.videos).toBe(2);
       state.filters.kind = 'video';
       expect(state.filteredVideos).toHaveLength(2);

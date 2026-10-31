@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from '../assets/js/lib/counters.js';
+import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, videoWatchCounterKey, writeLocalCounter } from '../assets/js/lib/counters.js';
 import { collectAbacusSnapshot, listTrackedAppPaths, snapshotHasChanges } from '../scripts/sync-abacus-stats.mjs';
 
 describe('Abacus counters', () => {
@@ -10,6 +10,15 @@ describe('Abacus counters', () => {
     expect(key).toMatch(/^download-[a-f0-9]{8}$/);
     expect(downloadCounterKey('apps/Year 12 algebra.pdf')).toBe(key);
     expect(downloadCounterKey('apps/Year 12 calculus.pdf')).not.toBe(key);
+  });
+
+  it('creates stable per-video watch keys separate from download keys', () => {
+    const path = 'apps/Calculus lesson.mp4';
+    const key = videoWatchCounterKey(path);
+    expect(key).toMatch(/^watch-[a-f0-9]{8}$/);
+    expect(videoWatchCounterKey(path)).toBe(key);
+    expect(videoWatchCounterKey('apps/Algebra lesson.mp4')).not.toBe(key);
+    expect(key).not.toBe(downloadCounterKey(path));
   });
 
   it('claims a visitor increment once per browser session', () => {
@@ -96,7 +105,7 @@ describe('Abacus counters', () => {
 describe('automatic Abacus-to-GitHub snapshots', () => {
   it('discovers supported, top-level files from the published apps directory', () => {
     const paths = listTrackedAppPaths();
-    expect(paths).toContain('apps/Blacktown Boys 2026 w. sol.pdf');
+    expect(paths).toContain('apps/Compound_Interest_GP_HSC.mp4');
     expect(paths.every(path => /^apps\/[^/]+\.(?:html?|pdf|mp4|docx?|xlsx?|pptx?)$/i.test(path))).toBe(true);
   });
 

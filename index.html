@@ -192,7 +192,9 @@
                     <div x-show="videos.length > 0" class="mt-5">
                         <div class="relative aspect-video overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/10">
                             <video id="featured-video-player" :src="featuredVideo?.downloadUrl || null"
+                                   :poster="featuredVideo ? (videoThumbnails[featuredVideo.id]?.src || '') : ''"
                                    :aria-label="featuredVideo ? 'Video player: ' + featuredVideo.name : 'Classroom video player'"
+                                   @playing="countVideoWatch(featuredVideo)"
                                    controls playsinline preload="metadata"
                                    class="absolute inset-0 h-full w-full bg-black object-contain"></video>
                         </div>
@@ -236,7 +238,7 @@
                     <div x-show="videos.length > 0" id="video-playlist" role="list" aria-label="Available video files" tabindex="0"
                          class="video-playlist-scroll mt-4 max-h-[24rem] space-y-2.5 overflow-y-auto overscroll-contain pr-2 focus-ring lg:max-h-[28rem]">
                         <template x-for="video in videos" :key="'playlist-' + video.id">
-                            <div role="listitem">
+                            <div role="listitem" x-init="observeVideoWatchCounter(video, $el)">
                                 <button type="button" @click="selectFeaturedVideo(video)"
                                         :aria-pressed="featuredVideo?.id === video.id ? 'true' : 'false'"
                                         class="video-playlist__item group grid w-full grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] items-center gap-3 rounded-xl border border-white/10 bg-slate-950/35 p-2 text-left transition hover:border-white/25 hover:bg-white/10 focus-ring sm:grid-cols-[minmax(0,8.5rem)_minmax(0,1fr)]"
@@ -252,12 +254,17 @@
                                                 <i data-lucide="play" class="ml-0.5 h-4 w-4 fill-current" aria-hidden="true"></i>
                                             </span>
                                         </span>
+                                        <span class="absolute left-1 top-1 rounded bg-rose-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">MP4</span>
                                         <span class="absolute bottom-1 right-1 rounded bg-black/80 px-1 py-0.5 text-[9px] font-semibold text-white" x-text="videoThumbnails[video.id]?.duration || 'MP4'"></span>
                                     </span>
                                     <span class="min-w-0 py-1">
                                         <span class="line-clamp-2 block text-sm font-bold leading-5 text-white" x-text="video.name"></span>
                                         <span class="mt-1 block truncate text-xs text-slate-300" x-text="[video.meta.subject, formatYears(video.meta.years || [])].filter(Boolean).join(' · ') || 'Classroom video'"></span>
                                         <span class="mt-1 block truncate text-[11px] text-slate-400" x-text="formatDate(video.addedAt || video.meta.addedAt) || video.fileName"></span>
+                                        <span class="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold text-slate-200" :title="'Counted once when playback starts in this browser tab'">
+                                            <i data-lucide="eye" class="h-3 w-3" aria-hidden="true"></i>
+                                            <span x-text="videoWatchLabel(video)"></span>
+                                        </span>
                                     </span>
                                 </button>
                             </div>
