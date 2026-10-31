@@ -545,18 +545,81 @@
                 </div>
             </template>
 
+            <!-- Video files are presented as a video-platform-style thumbnail gallery. -->
+            <section x-show="videos.length > 0 && filters.kind !== 'app' && filters.kind !== 'document'" x-cloak
+                     class="mt-12" aria-labelledby="videos-heading">
+                <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                        <p class="text-xs font-bold uppercase tracking-[0.16em] text-rose-600">Watch &amp; learn</p>
+                        <h3 id="videos-heading" class="mt-1 text-2xl font-bold tracking-tight text-slate-900">Video files</h3>
+                        <p class="mt-1 text-sm text-slate-500" x-text="videoArchive.length > 0 ? 'Browse all classroom videos, newest first. Select a thumbnail to load it in the player above.' : (filteredVideos.length === 0 && hasActiveFilters ? 'No videos match the current search or filters.' : 'The newest video is featured above. Videos will appear here as they are added.')"></p>
+                    </div>
+                    <span class="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 ring-1 ring-rose-100"
+                          x-text="filteredVideos.length + (filteredVideos.length === 1 ? ' video' : ' videos')"></span>
+                </div>
+                <div x-show="videoArchive.length === 0" x-cloak
+                     class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
+                    <i data-lucide="video" class="mx-auto h-8 w-8 text-slate-300" aria-hidden="true"></i>
+                    <p class="mt-3" x-text="filteredVideos.length === 0 && hasActiveFilters ? 'Try changing the search or filters to find a video.' : 'The newest upload is ready in the player above. Videos will collect here as they are added.'"></p>
+                </div>
+                <ul x-show="videoArchive.length > 0" role="list" class="grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    <template x-for="video in videoArchive" :key="video.id">
+                        <li class="group min-w-0">
+                            <button type="button" @click="selectFeaturedVideo(video)"
+                                    :aria-label="'Play ' + video.name"
+                                    class="video-thumbnail group relative block aspect-video w-full overflow-hidden rounded-xl bg-slate-900 text-left shadow-sm ring-1 ring-slate-900/10 transition hover:shadow-lg focus-ring">
+                                <video :src="video.downloadUrl" muted playsinline preload="metadata"
+                                       aria-hidden="true" tabindex="-1"
+                                       @loadeddata="captureVideoThumbnail($event, video.id)"
+                                       class="absolute inset-0 h-full w-full object-cover"></video>
+                                <img x-show="videoThumbnails[video.id]?.src" x-cloak
+                                     :src="videoThumbnails[video.id]?.src || ''"
+                                     :alt="video.name + ' video thumbnail'"
+                                     class="absolute inset-0 h-full w-full object-cover">
+                                <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10"></div>
+                                <span class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                    <span class="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white ring-1 ring-white/40 transition group-hover:scale-110 group-hover:bg-rose-600">
+                                        <i data-lucide="play" class="ml-0.5 h-5 w-5 fill-current" aria-hidden="true"></i>
+                                    </span>
+                                </span>
+                                <span class="pointer-events-none absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold text-white"
+                                      x-text="videoThumbnails[video.id]?.duration || 'MP4'"></span>
+                                <span class="pointer-events-none absolute left-2 top-2 rounded bg-rose-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">Video</span>
+                            </button>
+                            <div class="mt-3 flex items-start gap-3">
+                                <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-100">
+                                    <i data-lucide="video" class="h-4 w-4" aria-hidden="true"></i>
+                                </span>
+                                <div class="min-w-0 flex-1">
+                                    <button type="button" @click="selectFeaturedVideo(video)"
+                                            class="line-clamp-2 text-left text-sm font-bold leading-5 text-slate-900 hover:text-rose-700 focus-ring rounded"
+                                            x-text="video.name"></button>
+                                    <p class="mt-1 truncate text-xs text-slate-500" x-text="[video.meta.subject, formatYears(video.meta.years || [])].filter(Boolean).join(' · ')"></p>
+                                    <p class="mt-1 truncate text-xs text-slate-400" x-text="formatDate(video.addedAt || video.meta.addedAt) || video.fileName"></p>
+                                </div>
+                            </div>
+                        </li>
+                    </template>
+                </ul>
+            </section>
+
             <!-- Mini apps -->
-            <section x-show="filteredMiniApps.length > 0" aria-labelledby="apps-heading">
+            <section x-show="filteredMiniApps.length > 0" class="mt-12" aria-labelledby="apps-heading">
                 <h3 id="apps-heading" class="text-xl font-bold text-slate-900 mb-4">Mini Apps</h3>
-                <ul role="list" class="library-card-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <ul role="list" class="library-card-grid grid grid-cols-1 gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     <template x-for="app in filteredMiniApps" :key="app.id">
                         <li class="resource-card bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
                             x-init="observeDownloadCounter(app, $el)"
                             :class="isLatest(app) ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'">
-                            <div class="resource-card__body p-6 flex flex-col flex-1">
-                                <div class="flex justify-between items-start gap-3 mb-1">
-                                    <h4 class="text-lg font-bold text-slate-900 break-words" x-text="app.name"></h4>
-                                    <span class="text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2 py-1 rounded flex-shrink-0">HTML5</span>
+                            <div class="relative aspect-video overflow-hidden bg-gradient-to-br from-indigo-950 via-indigo-800 to-cyan-700">
+                                <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.25),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(45,212,191,0.32),_transparent_38%)]" aria-hidden="true"></div>
+                                <span class="absolute left-3 top-3 rounded-full border border-white/20 bg-slate-950/35 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur">Interactive mini app</span>
+                                <i data-lucide="code-2" class="absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 text-white/90 drop-shadow-lg" aria-hidden="true"></i>
+                                <span class="absolute bottom-3 right-3 rounded bg-black/65 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white">HTML5</span>
+                            </div>
+                            <div class="resource-card__body p-4 flex flex-col flex-1">
+                                <div class="mb-1 flex items-start gap-3">
+                                    <h4 class="min-w-0 flex-1 text-base font-bold text-slate-900 break-words" x-text="app.name"></h4>
                                 </div>
                                 <p class="text-xs text-slate-400 mb-3 break-all" x-text="app.fileName"></p>
 
@@ -646,87 +709,27 @@
                 </ul>
             </section>
 
-            <!-- Older videos are presented as a video-platform-style thumbnail gallery. -->
-            <section x-show="videos.length > 0 && filters.kind !== 'app' && filters.kind !== 'document'" x-cloak
-                     class="mt-12" aria-labelledby="videos-heading">
-                <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <p class="text-xs font-bold uppercase tracking-[0.16em] text-rose-600">Watch &amp; learn</p>
-                        <h3 id="videos-heading" class="mt-1 text-2xl font-bold tracking-tight text-slate-900">Video files</h3>
-                        <p class="mt-1 text-sm text-slate-500" x-text="videoArchive.length > 0 ? 'Browse all classroom videos, newest first. Select a thumbnail to load it in the player above.' : (filteredVideos.length === 0 && hasActiveFilters ? 'No videos match the current search or filters.' : 'The newest video is featured above. Videos will appear here as they are added.')"></p>
-                    </div>
-                    <span class="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 ring-1 ring-rose-100"
-                          x-text="filteredVideos.length + (filteredVideos.length === 1 ? ' video' : ' videos')"></span>
-                </div>
-                <div x-show="videoArchive.length === 0" x-cloak
-                     class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
-                    <i data-lucide="video" class="mx-auto h-8 w-8 text-slate-300" aria-hidden="true"></i>
-                    <p class="mt-3" x-text="filteredVideos.length === 0 && hasActiveFilters ? 'Try changing the search or filters to find a video.' : 'The newest upload is ready in the player above. Videos will collect here as they are added.'"></p>
-                </div>
-                <ul x-show="videoArchive.length > 0" role="list" class="grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    <template x-for="video in videoArchive" :key="video.id">
-                        <li class="group min-w-0">
-                            <button type="button" @click="selectFeaturedVideo(video)"
-                                    :aria-label="'Play ' + video.name"
-                                    class="video-thumbnail group relative block aspect-video w-full overflow-hidden rounded-xl bg-slate-900 text-left shadow-sm ring-1 ring-slate-900/10 transition hover:shadow-lg focus-ring">
-                                <video :src="video.downloadUrl" muted playsinline preload="metadata"
-                                       aria-hidden="true" tabindex="-1"
-                                       @loadeddata="captureVideoThumbnail($event, video.id)"
-                                       class="absolute inset-0 h-full w-full object-cover"></video>
-                                <img x-show="videoThumbnails[video.id]?.src" x-cloak
-                                     :src="videoThumbnails[video.id]?.src || ''"
-                                     :alt="video.name + ' video thumbnail'"
-                                     class="absolute inset-0 h-full w-full object-cover">
-                                <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/10"></div>
-                                <span class="pointer-events-none absolute inset-0 flex items-center justify-center">
-                                    <span class="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-white ring-1 ring-white/40 transition group-hover:scale-110 group-hover:bg-rose-600">
-                                        <i data-lucide="play" class="ml-0.5 h-5 w-5 fill-current" aria-hidden="true"></i>
-                                    </span>
-                                </span>
-                                <span class="pointer-events-none absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-[11px] font-semibold text-white"
-                                      x-text="videoThumbnails[video.id]?.duration || 'MP4'"></span>
-                                <span class="pointer-events-none absolute left-2 top-2 rounded bg-rose-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">Video</span>
-                            </button>
-                            <div class="mt-3 flex items-start gap-3">
-                                <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-100">
-                                    <i data-lucide="video" class="h-4 w-4" aria-hidden="true"></i>
-                                </span>
-                                <div class="min-w-0 flex-1">
-                                    <button type="button" @click="selectFeaturedVideo(video)"
-                                            class="line-clamp-2 text-left text-sm font-bold leading-5 text-slate-900 hover:text-rose-700 focus-ring rounded"
-                                            x-text="video.name"></button>
-                                    <p class="mt-1 truncate text-xs text-slate-500" x-text="[video.meta.subject, formatYears(video.meta.years || [])].filter(Boolean).join(' · ')"></p>
-                                    <p class="mt-1 truncate text-xs text-slate-400" x-text="formatDate(video.addedAt || video.meta.addedAt) || video.fileName"></p>
-                                </div>
-                            </div>
-                        </li>
-                    </template>
-                </ul>
-            </section>
-
             <!-- Documents and resources -->
             <section x-show="filteredResources.length > 0" class="mt-12" aria-labelledby="resources-heading">
                 <div class="mb-4">
                     <h3 id="resources-heading" class="text-xl font-bold text-slate-900">Documents &amp; Resources</h3>
                     <p class="text-slate-600 mt-1 text-sm">Preview or download classroom documents, spreadsheets and presentations.</p>
                 </div>
-                <ul role="list" class="library-card-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <ul role="list" class="library-card-grid grid grid-cols-1 gap-x-5 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     <template x-for="resource in filteredResources" :key="resource.id">
                         <li class="resource-card bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition-shadow flex flex-col"
                             x-init="observeDownloadCounter(resource, $el)"
                             :class="isLatest(resource) ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'">
-                            <div class="resource-card__body p-6 flex flex-col flex-1">
-                                <div class="flex items-start justify-between gap-4 mb-1">
-                                    <div class="flex items-center gap-3 min-w-0">
-                                        <div class="bg-amber-50 text-amber-700 p-2.5 rounded-lg flex-shrink-0">
-                                            <i :data-lucide="fileIcon(resource)" class="w-5 h-5" aria-hidden="true"></i>
-                                        </div>
-                                        <div class="min-w-0">
-                                            <h4 class="font-bold text-slate-900 break-words" x-text="resource.name"></h4>
-                                            <p class="text-xs text-slate-400 break-all mt-0.5" x-text="resource.fileName"></p>
-                                        </div>
-                                    </div>
-                                    <span class="text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 px-2 py-1 rounded flex-shrink-0" x-text="fileExtension(resource)"></span>
+                            <div class="relative aspect-video overflow-hidden bg-gradient-to-br from-amber-950 via-orange-800 to-rose-700">
+                                <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.24),_transparent_36%),radial-gradient(circle_at_bottom_left,_rgba(253,186,116,0.32),_transparent_40%)]" aria-hidden="true"></div>
+                                <span class="absolute left-3 top-3 rounded-full border border-white/20 bg-slate-950/35 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur">Classroom resource</span>
+                                <i :data-lucide="fileIcon(resource)" class="absolute left-1/2 top-1/2 h-12 w-12 -translate-x-1/2 -translate-y-1/2 text-white/90 drop-shadow-lg" aria-hidden="true"></i>
+                                <span class="absolute bottom-3 right-3 rounded bg-black/65 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white" x-text="fileExtension(resource)"></span>
+                            </div>
+                            <div class="resource-card__body p-4 flex flex-col flex-1">
+                                <div class="mb-1 min-w-0">
+                                    <h4 class="font-bold text-slate-900 break-words" x-text="resource.name"></h4>
+                                    <p class="text-xs text-slate-400 break-all mt-0.5" x-text="resource.fileName"></p>
                                 </div>
 
                                 <!-- When it was added: green "Latest" for the first day -->

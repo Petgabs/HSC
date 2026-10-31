@@ -138,6 +138,18 @@ describe('School Cloud release configuration', () => {
     expect(searchSection).toContain('id="featured-video-player"');
     expect(searchSection).toContain('controls playsinline preload="metadata"');
     expect(html).toContain('aria-labelledby="videos-heading"');
+    const videoGalleryPosition = html.indexOf('<!-- Video files are presented as a video-platform-style thumbnail gallery. -->');
+    const miniAppsPosition = html.indexOf('<!-- Mini apps -->');
+    const documentsPosition = html.indexOf('<!-- Documents and resources -->');
+    expect(html.indexOf('id="featured-video-player"')).toBeLessThan(videoGalleryPosition);
+    expect(videoGalleryPosition).toBeLessThan(miniAppsPosition);
+    expect(miniAppsPosition).toBeLessThan(documentsPosition);
+    const miniAppsSection = html.slice(miniAppsPosition, documentsPosition);
+    const documentsSection = html.slice(documentsPosition);
+    expect(miniAppsSection).toContain('aspect-video');
+    expect(miniAppsSection).toContain('xl:grid-cols-4');
+    expect(documentsSection).toContain('aspect-video');
+    expect(documentsSection).toContain('xl:grid-cols-4');
     expect(html).toContain('x-show="videos.length > 0 && filters.kind !== \'app\' && filters.kind !== \'document\'"');
     expect(html).toContain('Browse all classroom videos, newest first. Select a thumbnail to load it in the player above.');
     expect(html).toContain('@loadeddata="captureVideoThumbnail($event, video.id)"');
