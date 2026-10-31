@@ -483,5 +483,23 @@
     "addedAt": "2026-10-31T02:44:08.365Z",
     "sha256": "b1e0af9695e0f028996d5a96c5770106d884e329b8ac90f04b73286c11782a8d",
     "bytes": 133393
+  },
+  "apps/Finance_Vocabulary_HSC_Part_A.mp4": {
+    "title": "Finance Vocabulary HSC Part A",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T03:20:47.917Z",
+    "sha256": "d914eb2b6a5842ca1d1bbb442b22130242b4abe9e43ed803506b538ba881970f",
+    "bytes": 26495317
   }
 }
