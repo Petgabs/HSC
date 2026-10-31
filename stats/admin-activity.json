@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T02:28:44.544Z",
+  "updatedAt": "2026-10-31T02:30:38.847Z",
   "logins": [
     {
       "at": "2026-10-31T02:28:44.543Z",
@@ -109,6 +109,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T02:30:38.846Z",
+      "path": "apps/AP_vs_GP_Comparison_and_HSC_Practice_Teacher_Copy.pdf",
+      "name": "AP_vs_GP_Comparison_and_HSC_Practice_Teacher_Copy.pdf",
+      "title": "AP vs GP Comparison and HSC Practice Questions",
+      "bytes": 224788,
+      "subject": "Mathematics",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T01:58:24.775Z",
       "path": "apps/Compound_Interest_GP_HSC.mp4",
