@@ -429,5 +429,23 @@
     "addedAt": "2026-10-31T02:35:25.638Z",
     "sha256": "6e21b629e2b93a7b7bf88d64ff60c62ac92fdd5708da333435f66c65fd0ae270",
     "bytes": 3085658
+  },
+  "apps/Application of AP and GP - NESA Marking Guidelines and Solutions (1).pdf": {
+    "title": "Application of AP and GP NESA Marking Guidelines and Solutions",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T02:36:53.650Z",
+    "sha256": "73d3027be4b17f1e3a08af82c07931ecf8c0f74004014315abd3c75cd36666b1",
+    "bytes": 73340
   }
 }
