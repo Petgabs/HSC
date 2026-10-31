@@ -91,20 +91,22 @@ describe('School Cloud release configuration', () => {
     expect(publisher).toContain('because it changed repeatedly');
   });
 
-  it('ships with no GitHub credential and allows only the Abacus counter origin', async () => {
+  it('ships no administrator credential or Supabase secret and allows configured API origins', async () => {
     const [config, html, headers] = await Promise.all([
       read('../assets/js/config.js'), read('../index.html'), read('../_headers')
     ]);
     expect(config).toContain("baseUrl: 'https://abacus.jasoncameron.dev'");
+    expect(config).toContain("supabaseUrl: 'https://ifnimguckfueeribokps.supabase.co'");
+    expect(config).toContain("publishableKey: 'sb_publishable_");
     // The admin gate ships a username, a salt and a SHA-256 digest only — never a plain password.
     expect(config).toMatch(/username:\s*'hsc-admin'/);
     expect(config).toMatch(/salt:\s*'[0-9a-f]{16,}'/);
     expect(config).toMatch(/passwordHash:\s*'[0-9a-f]{64}'/);
     expect(config).not.toMatch(/\bpassword\s*:\s*'/i);
-    expect(config).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
+    expect(config).not.toMatch(/(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sb_secret_[A-Za-z0-9_-]{20,})/);
     expect(html).toContain('https://abacus.jasoncameron.dev');
-    expect(html).not.toContain('supabase.co');
-    expect(headers).not.toContain('supabase.co');
+    expect(html).toContain('https://ifnimguckfueeribokps.supabase.co');
+    expect(headers).toContain('https://ifnimguckfueeribokps.supabase.co');
   });
 
   it('has every first-party asset referenced by the page and the token-encryption runtime', async () => {

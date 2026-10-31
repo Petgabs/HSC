@@ -10,7 +10,7 @@
     <!-- Defence in depth for the static deployment. Alpine's distributed
          runtime needs unsafe-eval; no inline script is permitted. Uploaded
          HTML is still rendered in a sandboxed iframe without same-origin. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://api.github.com https://abacus.jasoncameron.dev; frame-src 'self' blob: https://view.officeapps.live.com; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://api.github.com https://abacus.jasoncameron.dev https://ifnimguckfueeribokps.supabase.co; frame-src 'self' blob: https://view.officeapps.live.com; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
 
     <!-- Locally bundled styles and scripts: no third-party CDN is required,
          so the site keeps working on restricted school networks and offline. -->
@@ -44,7 +44,7 @@
                 <div class="flex flex-col items-start text-left leading-tight">
                     <h1 class="text-base sm:text-lg font-bold tracking-tight text-slate-900">
                         School Cloud <span class="text-indigo-600">System</span>
-                        <span class="site-brand__version ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.16.0</span>
+                        <span class="site-brand__version ml-1.5 align-middle text-[10px] font-semibold text-slate-500 bg-slate-100 ring-1 ring-slate-200 rounded px-1.5 py-0.5">v1.17.0</span>
                     </h1>
                     <p class="text-[11px] font-medium text-slate-500 tracking-wide mt-0.5">
                         powered by <span class="font-semibold text-slate-700">Petgabs</span>
@@ -271,6 +271,45 @@
                         </template>
                     </div>
                 </aside>
+            </div>
+        </section>
+
+        <!-- Anonymous, aggregate visitor activity is public; identifiable records remain server-protected. -->
+        <section x-show="currentView === 'library'" class="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.9fr)]" aria-label="Visitor activity summary">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Current users</p>
+                    <p class="mt-2 text-3xl font-bold text-indigo-700" x-text="studentVisit.loadingStats ? '…' : formatCount(studentVisit.activeUsers)"></p>
+                    <p class="mt-1 text-xs text-slate-500">Active in the last two minutes</p>
+                </article>
+                <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Visitors today</p>
+                    <p class="mt-2 text-3xl font-bold text-emerald-700" x-text="studentVisit.loadingStats ? '…' : formatCount(studentVisit.todayVisitors)"></p>
+                    <p class="mt-1 text-xs text-slate-500">Includes students who choose Skip</p>
+                </article>
+                <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">All-time visits</p>
+                    <p class="mt-2 text-3xl font-bold text-slate-900" x-text="studentVisit.loadingStats ? '…' : formatCount(studentVisit.totalVisitors)"></p>
+                    <p class="mt-1 text-xs text-slate-500">Resettable by a school administrator</p>
+                </article>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900">Visits this week</h3>
+                        <p class="mt-1 text-xs text-slate-500">Anonymous daily totals · UTC</p>
+                    </div>
+                    <i data-lucide="bar-chart-3" class="h-5 w-5 text-indigo-500" aria-hidden="true"></i>
+                </div>
+                <div class="mt-3 flex h-16 items-end justify-between gap-2" role="img" aria-label="Daily visit totals for the last seven days">
+                    <template x-for="day in studentVisitorDailySeries" :key="'public-visitor-day-' + day.day">
+                        <div class="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+                            <span class="text-[10px] font-semibold text-slate-500" x-text="day.visits"></span>
+                            <span class="w-full rounded-t bg-indigo-500" :style="'height:' + studentVisitorBarHeight(day) + '%'" :title="day.day + ': ' + day.visits + ' visits'"></span>
+                            <span class="text-[9px] text-slate-400" x-text="day.day.slice(5)"></span>
+                        </div>
+                    </template>
+                </div>
             </div>
         </section>
 
@@ -1050,6 +1089,94 @@
                             </button>
                         </div>
                     </aside>
+                </div>
+            </section>
+
+            <!-- Visitors: identifiable rows are only returned by the Edge Function after GitHub write-access verification. -->
+            <section id="admin-visitors" class="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-labelledby="admin-visitors-heading">
+                <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
+                    <div>
+                        <p class="text-xs font-bold uppercase tracking-[0.16em] text-indigo-600">Student activity</p>
+                        <h3 id="admin-visitors-heading" class="mt-1 text-xl font-bold text-slate-900">Visitors</h3>
+                        <p class="mt-1 max-w-2xl text-sm leading-6 text-slate-500">Students can share their English name and class or skip. Resource downloads and video play starts are linked only for students who opt in. Skipped visits remain anonymous. Daily totals use UTC.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" @click="loadVisitorRecords()" :disabled="studentVisit.loadingAdmin"
+                                class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 focus-ring">
+                            <i :data-lucide="studentVisit.loadingAdmin ? 'loader-2' : 'refresh-cw'" class="h-4 w-4" :class="studentVisit.loadingAdmin && 'animate-spin'" aria-hidden="true"></i>
+                            <span x-text="studentVisit.loadingAdmin ? 'Loading…' : 'Refresh visitors'"></span>
+                        </button>
+                        <button type="button" @click="resetVisitorRecords()" :disabled="studentVisit.resetting || studentVisit.loadingAdmin || !githubAuth.activeToken"
+                                class="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50 focus-ring">
+                            <i :data-lucide="studentVisit.resetting ? 'loader-2' : 'trash-2'" class="h-4 w-4" :class="studentVisit.resetting && 'animate-spin'" aria-hidden="true"></i>
+                            <span x-text="studentVisit.resetting ? 'Resetting…' : 'Reset visitor records'"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-5 sm:p-6">
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div class="rounded-xl bg-slate-50 p-4">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Currently online</p>
+                            <p class="mt-1 text-2xl font-bold text-indigo-700" x-text="studentVisit.loadingStats ? '…' : formatCount(studentVisit.activeUsers)"></p>
+                        </div>
+                        <div class="rounded-xl bg-slate-50 p-4">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Visits today</p>
+                            <p class="mt-1 text-2xl font-bold text-emerald-700" x-text="studentVisit.loadingStats ? '…' : formatCount(studentVisit.todayVisitors)"></p>
+                        </div>
+                        <div class="rounded-xl bg-slate-50 p-4">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">All-time visits</p>
+                            <p class="mt-1 text-2xl font-bold text-slate-900" x-text="studentVisit.loadingStats ? '…' : formatCount(studentVisit.totalVisitors)"></p>
+                        </div>
+                    </div>
+                    <div class="mt-4 rounded-xl border border-slate-100 bg-white p-3">
+                        <div class="flex h-16 items-end justify-between gap-2" role="img" aria-label="Daily visit totals for the last seven days">
+                            <template x-for="day in studentVisitorDailySeries" :key="'admin-visitor-day-' + day.day">
+                                <div class="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+                                    <span class="text-[10px] font-semibold text-slate-500" x-text="day.visits"></span>
+                                    <span class="w-full rounded-t bg-emerald-500" :style="'height:' + studentVisitorBarHeight(day) + '%'" :title="day.day + ': ' + day.visits + ' visits'"></span>
+                                    <span class="text-[9px] text-slate-400" x-text="day.day.slice(5)"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div x-show="!githubAuth.activeToken" class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                        <p>Connect a GitHub token with write access to this repository to load names, classes, and linked activities. The server checks access before returning records.</p>
+                        <button type="button" @click="openCloudSettings()" class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-bold text-amber-900 hover:bg-amber-100 focus-ring">Open Settings</button>
+                    </div>
+                    <div x-show="studentVisit.adminError" x-cloak role="alert" class="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" x-text="studentVisit.adminError"></div>
+                    <div x-show="studentVisit.loadingAdmin" class="mt-4 py-8 text-center text-sm text-slate-500" role="status">Loading visitor records…</div>
+                    <div x-show="!studentVisit.loadingAdmin && !studentVisit.adminError && studentVisit.visitors.length === 0" class="mt-4 rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+                        No visitor records to show. The table updates when a student submits the prompt or chooses Skip.
+                    </div>
+                    <div x-show="!studentVisit.loadingAdmin && studentVisit.visitors.length > 0" class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+                        <table class="w-full min-w-[42rem] text-left text-sm">
+                            <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                                <tr>
+                                    <th scope="col" class="px-4 py-3">Student</th>
+                                    <th scope="col" class="px-4 py-3">Class / section</th>
+                                    <th scope="col" class="px-4 py-3">Visit time</th>
+                                    <th scope="col" class="px-4 py-3">Linked downloads &amp; video watches</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <template x-for="visit in studentVisit.visitors" :key="visit.id">
+                                    <tr class="align-top hover:bg-slate-50/60">
+                                        <td class="px-4 py-3 font-semibold text-slate-900" x-text="visit.skipped ? 'Skipped (anonymous)' : (visit.student_name || 'Student')"></td>
+                                        <td class="px-4 py-3 text-slate-600" x-text="visit.class_name || '—'"></td>
+                                        <td class="whitespace-nowrap px-4 py-3 text-slate-600" x-text="formatDateTime(visit.visited_at)"></td>
+                                        <td class="px-4 py-3 text-slate-600">
+                                            <ul x-show="visit.activities?.length" class="space-y-1">
+                                                <template x-for="(activity, activityIndex) in (visit.activities || [])" :key="visit.id + '-activity-' + activityIndex">
+                                                    <li class="text-xs leading-5"><span class="font-semibold" x-text="activity.type === 'download' ? 'Downloaded:' : 'Watched:'"></span> <span x-text="activity.resource_title"></span> <span class="text-slate-400" x-text="'· ' + formatDateTime(activity.occurred_at)"></span></li>
+                                                </template>
+                                            </ul>
+                                            <span x-show="!visit.activities?.length" class="text-xs text-slate-400">No linked activity</span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
@@ -2818,6 +2945,51 @@
              :class="toast.tone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-800' : (toast.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-700')"
              x-text="toast.message"></div>
 
+        <div x-show="studentVisit.showPrompt" x-cloak
+             class="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-sm"
+             role="dialog" aria-modal="true" aria-labelledby="student-visit-title">
+            <section class="my-auto w-full max-w-lg rounded-3xl border border-white/20 bg-white p-6 shadow-2xl sm:p-8" @click.stop x-init="if (studentVisit.showPrompt) $nextTick(() => $refs.studentVisitName?.focus())">
+                <div class="flex items-start gap-4">
+                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
+                        <i data-lucide="heart" class="h-6 w-6" aria-hidden="true"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs font-bold uppercase tracking-[0.16em] text-indigo-600">Welcome to the student library</p>
+                        <h2 id="student-visit-title" class="mt-1 text-2xl font-bold tracking-tight text-slate-900">Would you like to let your teacher know you visited?</h2>
+                    </div>
+                </div>
+                <p class="mt-4 text-sm leading-6 text-slate-600">Share your English name and class or section below. This is optional. If you skip, your visit is still counted anonymously and you can continue to the resources.</p>
+                <form class="mt-5 space-y-4" @submit.prevent="submitStudentVisit()">
+                    <div>
+                        <label for="student-visit-name" class="mb-1 block text-sm font-semibold text-slate-700">English name</label>
+                        <input id="student-visit-name" x-ref="studentVisitName" x-model="studentVisit.name" type="text" maxlength="80" autocomplete="given-name" required
+                               class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                               placeholder="Your name">
+                    </div>
+                    <div>
+                        <label for="student-visit-class" class="mb-1 block text-sm font-semibold text-slate-700">Class or section</label>
+                        <input id="student-visit-class" x-model="studentVisit.className" type="text" maxlength="48" autocomplete="off" required
+                               class="w-full rounded-xl border border-slate-300 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                               placeholder="For example, 11A">
+                    </div>
+                    <p x-show="studentVisit.error" x-cloak role="alert" class="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm leading-5 text-rose-800" x-text="studentVisit.error"></p>
+                    <div class="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 text-xs leading-5 text-indigo-950">
+                        If you share, your name, class, and visit time are visible to teachers in the admin Visitors section. Resource downloads and video play starts may be linked to your visit. Records stay until an administrator resets them. Skipping does not link activity to you.
+                    </div>
+                    <div class="flex flex-col-reverse gap-3 pt-1 sm:flex-row">
+                        <button type="button" @click="skipStudentVisit()" :disabled="studentVisit.saving"
+                                class="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 focus-ring">
+                            Skip and continue anonymously
+                        </button>
+                        <button type="submit" :disabled="studentVisit.saving"
+                                class="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60 focus-ring">
+                            <span x-text="studentVisit.saving ? 'Saving…' : 'Share my visit'">Share my visit</span>
+                        </button>
+                    </div>
+                </form>
+            </section>
+        </div>
+
         <div x-show="showLogin" x-cloak
              class="login-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
              role="dialog" aria-modal="true" aria-labelledby="login-title"
@@ -2857,8 +3029,5 @@
     </main>
 
     <script type="module" src="./assets/js/register-sw.js"></script>
-</body>
-</html>
-t>
 </body>
 </html>

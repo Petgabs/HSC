@@ -1,0 +1,4 @@
+project_id = "ifnimguckfueeribokps"
+
+[functions.hsc-visitor-data]
+verify_jwt = false
