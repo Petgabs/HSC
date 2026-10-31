@@ -8,7 +8,7 @@
     "live Abacus values. Entries for removed files are retained."
   ],
   "namespace": "petgabs-hsc-schoolcloud",
-  "updatedAt": "2026-10-31T02:37:14.226Z",
+  "updatedAt": "2026-10-31T02:39:17.733Z",
   "visitors": 62,
   "files": {
     "apps/Sydney Boys 2026 w. sol.pdf": {
@@ -46,6 +46,10 @@
     "apps/Application of AP and GP - NESA Marking Guidelines and Solutions (1).pdf": {
       "downloads": 0,
       "key": "download-fd6a5d6f"
+    },
+    "apps/Applications of AP and GP - Teacher Teaching Guide.pdf": {
+      "downloads": 0,
+      "key": "download-d15497b7"
     }
   }
 }
