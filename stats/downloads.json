@@ -8,7 +8,7 @@
     "live Abacus values. Entries for removed files are retained."
   ],
   "namespace": "petgabs-hsc-schoolcloud",
-  "updatedAt": "2026-10-31T02:44:30.379Z",
+  "updatedAt": "2026-10-31T03:23:06.608Z",
   "visitors": 63,
   "files": {
     "apps/Sydney Boys 2026 w. sol.pdf": {
@@ -54,6 +54,10 @@
     "apps/Teaching Guide - Limiting Sum of a Geometric Series.pdf": {
       "downloads": 0,
       "key": "download-aadc0bc0"
+    },
+    "apps/Finance_Vocabulary_HSC_Part_A.mp4": {
+      "downloads": 0,
+      "key": "download-05c6a74d"
     }
   }
 }
