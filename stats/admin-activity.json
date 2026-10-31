@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T02:31:07.059Z",
+  "updatedAt": "2026-10-31T02:32:09.580Z",
   "logins": [
     {
       "at": "2026-10-31T02:31:07.059Z",
@@ -113,6 +113,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T02:32:09.578Z",
+      "path": "apps/Maths_Vocabulary_EN-ZH_Sequences_and_Finance.pdf",
+      "name": "Maths_Vocabulary_EN-ZH_Sequences_and_Finance.pdf",
+      "title": "Maths Vocabulary EN ZH Sequences and Finance",
+      "bytes": 112018,
+      "subject": "Mathematics",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T02:30:38.846Z",
       "path": "apps/AP_vs_GP_Comparison_and_HSC_Practice_Teacher_Copy.pdf",
