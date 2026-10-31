@@ -411,5 +411,23 @@
     "addedAt": "2026-10-31T02:34:31.226Z",
     "sha256": "9b707013a8bf65d71d431d2c5408d049ea9e301e5a8ea977e941896199c52635",
     "bytes": 734648
+  },
+  "apps/Sequences_Series_2025-26_Practice_Paper.pdf": {
+    "title": "Sequences Series 2025-26 SOLUTIONS",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T02:35:25.638Z",
+    "sha256": "6e21b629e2b93a7b7bf88d64ff60c62ac92fdd5708da333435f66c65fd0ae270",
+    "bytes": 3085658
   }
 }
