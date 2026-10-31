@@ -360,5 +360,22 @@
     "addedAt": "2026-10-31T02:30:28.284Z",
     "sha256": "caf1de72d4bc9e01bdd7e2a00b03f05cbd14aecfcaf2986793461aa90920739e",
     "bytes": 224788
+  },
+  "apps/Maths_Vocabulary_EN-ZH_Sequences_and_Finance.pdf": {
+    "title": "Maths Vocabulary EN ZH Sequences and Finance",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T02:31:41.164Z",
+    "sha256": "cd1fd91a71a3fbbbf895abb3888b6fef9ed002c16caaf97640fc338e4b2517b0",
+    "bytes": 112018
   }
 }
