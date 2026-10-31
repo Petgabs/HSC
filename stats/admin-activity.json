@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T05:56:21.605Z",
+  "updatedAt": "2026-10-31T05:58:17.442Z",
   "logins": [
     {
       "at": "2026-10-31T05:56:21.604Z",
@@ -141,6 +141,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T05:58:17.441Z",
+      "path": "apps/Chapter_1_Quiz_Chinese_Subtitles.mp4",
+      "name": "Chapter_1_Quiz_Chinese_Subtitles.mp4",
+      "title": "Chapter 1 Quiz-ANSWERS-SOLUTIONS",
+      "bytes": 23455631,
+      "subject": "MAD",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T03:22:58.754Z",
       "path": "apps/Finance_Vocabulary_HSC_Part_A.mp4",
