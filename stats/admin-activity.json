@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T10:45:46.126Z",
+  "updatedAt": "2026-10-31T10:47:41.181Z",
   "logins": [
     {
       "at": "2026-10-31T10:45:46.125Z",
@@ -161,6 +161,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T10:47:41.180Z",
+      "path": "apps/Q67-79_Solutions.mp4",
+      "name": "Q67-79_Solutions.mp4",
+      "title": "Sequence and Series Q67-79 Solutions",
+      "bytes": 17150195,
+      "subject": "MAD",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T10:32:47.515Z",
       "path": "apps/Q54-66_Solutions.mp4",
