@@ -465,5 +465,23 @@
     "addedAt": "2026-10-31T02:38:57.197Z",
     "sha256": "cf7bcc1524ca9c743239e1d43c5830aedaccd7af62695810bee9128e47445b5b",
     "bytes": 237506
+  },
+  "apps/Teaching Guide - Limiting Sum of a Geometric Series.pdf": {
+    "title": "Limiting Sum of a Geometric Series",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T02:44:08.365Z",
+    "sha256": "b1e0af9695e0f028996d5a96c5770106d884e329b8ac90f04b73286c11782a8d",
+    "bytes": 133393
   }
 }
