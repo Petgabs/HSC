@@ -117,7 +117,7 @@ export function gateSignature() {
 }
 
 export const SUBJECTS = Object.freeze([
-  'Mathematics', 'EALD/English', 'CAL', 'BS', 'VA', 'PHY', 'MEX', 'Others'
+  'Mathematics', 'EALD/English', 'CAL', 'BS', 'VA', 'PHY', 'MEX', 'MAD', 'Others'
 ]);
 
 export const YEAR_LEVELS = Object.freeze([9, 10, 11, 12]);
