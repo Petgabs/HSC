@@ -8,7 +8,7 @@
     "live Abacus values. Entries for removed files are retained."
   ],
   "namespace": "petgabs-hsc-schoolcloud",
-  "updatedAt": "2026-10-31T02:30:51.397Z",
+  "updatedAt": "2026-10-31T02:32:17.561Z",
   "visitors": 62,
   "files": {
     "apps/Sydney Boys 2026 w. sol.pdf": {
@@ -26,6 +26,10 @@
     "apps/AP_vs_GP_Comparison_and_HSC_Practice_Teacher_Copy.pdf": {
       "downloads": 0,
       "key": "download-6cfa0015"
+    },
+    "apps/Maths_Vocabulary_EN-ZH_Sequences_and_Finance.pdf": {
+      "downloads": 0,
+      "key": "download-579340cb"
     }
   }
 }
