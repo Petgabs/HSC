@@ -104,6 +104,8 @@ describe('School Cloud page integration', () => {
       const state = window.document.body._x_dataStack?.[0];
       expect(window.Alpine?.version).toBeTruthy();
       expect(state).toBeTruthy();
+      expect(state.formOptions.subjects).toContain('MAD');
+      expect(state.formOptions.departments).toContain('MAD');
       expect(state.apps).toHaveLength(4);
       expect(state.miniApps).toHaveLength(1);
       expect(state.resources).toHaveLength(3);
