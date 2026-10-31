@@ -447,5 +447,23 @@
     "addedAt": "2026-10-31T02:36:53.650Z",
     "sha256": "73d3027be4b17f1e3a08af82c07931ecf8c0f74004014315abd3c75cd36666b1",
     "bytes": 73340
+  },
+  "apps/Applications of AP and GP - Teacher Teaching Guide.pdf": {
+    "title": "Applications of AP and GP Examples",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T02:38:57.197Z",
+    "sha256": "cf7bcc1524ca9c743239e1d43c5830aedaccd7af62695810bee9128e47445b5b",
+    "bytes": 237506
   }
 }
