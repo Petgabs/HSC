@@ -110,7 +110,7 @@ describe('School Cloud page integration', () => {
       expect(state.videos).toHaveLength(2);
       expect(state.latestVideo.fileName).toBe('Calculus lesson.mp4');
       expect(state.featuredVideo.id).toBe(state.latestVideo.id);
-      expect(state.videoArchive.map(video => video.fileName)).toEqual(['Quadratics lesson.mp4']);
+      expect(state.videoArchive.map(video => video.fileName)).toEqual(['Calculus lesson.mp4', 'Quadratics lesson.mp4']);
       expect(state.facets.videos).toBe(2);
       state.filters.kind = 'video';
       expect(state.filteredVideos).toHaveLength(2);
@@ -119,7 +119,7 @@ describe('School Cloud page integration', () => {
       state.filters.query = 'calculus';
       expect(state.filteredVideos.map(video => video.fileName)).toEqual(['Calculus lesson.mp4']);
       expect(state.showFeaturedVideo).toBe(true);
-      expect(state.videoArchive).toHaveLength(0);
+      expect(state.videoArchive.map(video => video.fileName)).toEqual(['Calculus lesson.mp4']);
       state.filters.query = 'no matching video';
       expect(state.showFeaturedVideo).toBe(false);
       expect(state.resultCount).toBe(0);

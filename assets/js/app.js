@@ -524,8 +524,9 @@ function schoolCloud() {
       return this.sortByLiveState(result);
     },
     get videoArchive() {
-      const latestId = this.latestVideo?.id;
-      return this.filteredVideos.filter(video => video.id !== latestId);
+      // Keep the latest video in the gallery as well as featuring it in the
+      // main player, so students can browse or replay it from either place.
+      return this.filteredVideos;
     },
     get localAppCount() { return this.localDrafts.length; },
     get cloudAppCount() { return this.apps.length; },

@@ -132,19 +132,20 @@ describe('School Cloud release configuration', () => {
     expect(worker).toContain("request.headers.has('range')");
   });
 
-  it('features the newest video and presents older videos as thumbnail cards', async () => {
+  it('features the newest video and lists every video in the thumbnail gallery', async () => {
     const [html, app] = await Promise.all([read('../index.html'), read('../assets/js/app.js')]);
     const searchSection = html.slice(html.indexOf('id="search-heading"'), html.indexOf('<!-- Error state -->'));
     expect(searchSection).toContain('id="featured-video-player"');
     expect(searchSection).toContain('controls playsinline preload="metadata"');
     expect(html).toContain('aria-labelledby="videos-heading"');
     expect(html).toContain('x-show="videos.length > 0 && filters.kind !== \'app\' && filters.kind !== \'document\'"');
-    expect(html).toContain('The newest upload is ready in the player above. Older videos will collect here.');
+    expect(html).toContain('Browse all classroom videos, newest first. Select a thumbnail to load it in the player above.');
     expect(html).toContain('@loadeddata="captureVideoThumbnail($event, video.id)"');
     expect(html).toContain(':src="videoThumbnails[video.id]?.src || \'\'"');
     expect(html).toContain('@click="selectFeaturedVideo(video)"');
     expect(app).toContain('get latestVideo() { return this.videos[0] || null; }');
     expect(app).toContain('get videoArchive()');
+    expect(app).toContain('return this.filteredVideos;');
     expect(app).toContain('formatVideoDuration(video.duration)');
   });
 

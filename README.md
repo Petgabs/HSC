@@ -11,9 +11,9 @@ the GitHub repository; GitHub Pages then makes them available to students.
 
 - Keeps the existing student library, resource cards, search, subject/year
   filters, previews, download links, dashboard, resource statistics and offline
-  support. The library features the newest MP4 in a built-in player and presents
-  older videos in a separate thumbnail gallery; thumbnail stills are generated
-  in the browser from each video's frame.
+  support. The library features the newest MP4 in a built-in player and lists
+  all videos, including the newest, in a separate thumbnail gallery; thumbnail
+  stills are generated in the browser from each video's frame.
 - Removes the separate teacher login and teacher credential management. The
   website has one administrator sign-in; admin uploads publish directly rather
   than entering a teacher review queue. The legacy **Review Submissions**
