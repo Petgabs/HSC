@@ -132,29 +132,33 @@ describe('School Cloud release configuration', () => {
     expect(worker).toContain("request.headers.has('range')");
   });
 
-  it('features the newest video and lists every video in the thumbnail gallery', async () => {
-    const [html, app] = await Promise.all([read('../index.html'), read('../assets/js/app.js')]);
-    const searchSection = html.slice(html.indexOf('id="search-heading"'), html.indexOf('<!-- Error state -->'));
-    expect(searchSection).toContain('id="featured-video-player"');
-    expect(searchSection).toContain('controls playsinline preload="metadata"');
-    expect(html).toContain('aria-labelledby="videos-heading"');
-    const videoGalleryPosition = html.indexOf('<!-- Video files are presented as a video-platform-style thumbnail gallery. -->');
-    const miniAppsPosition = html.indexOf('<!-- Mini apps -->');
-    const documentsPosition = html.indexOf('<!-- Documents and resources -->');
-    expect(html.indexOf('id="featured-video-player"')).toBeLessThan(videoGalleryPosition);
-    expect(videoGalleryPosition).toBeLessThan(miniAppsPosition);
-    expect(miniAppsPosition).toBeLessThan(documentsPosition);
-    const miniAppsSection = html.slice(miniAppsPosition, documentsPosition);
-    const documentsSection = html.slice(documentsPosition);
-    expect(miniAppsSection).toContain('aspect-video');
-    expect(miniAppsSection).toContain('xl:grid-cols-4');
-    expect(documentsSection).toContain('aspect-video');
-    expect(documentsSection).toContain('xl:grid-cols-4');
-    expect(html).toContain('x-show="videos.length > 0 && filters.kind !== \'app\' && filters.kind !== \'document\'"');
-    expect(html).toContain('Browse all classroom videos, newest first. Select a thumbnail to load it in the player above.');
-    expect(html).toContain('@loadeddata="captureVideoThumbnail($event, video.id)"');
-    expect(html).toContain(':src="videoThumbnails[video.id]?.src || \'\'"');
-    expect(html).toContain('@click="selectFeaturedVideo(video)"');
+  it('features the MP4 player beside a scrollable video playlist, then puts search below', async () => {
+    const [html, app, css] = await Promise.all([
+      read('../index.html'), read('../assets/js/app.js'), read('../assets/css/tailwind.src.css')
+    ]);
+    const heroStart = html.indexOf('<!-- Student learning dashboard -->');
+    const heroEnd = html.indexOf('<!-- Library View -->');
+    const hero = html.slice(heroStart, heroEnd);
+    const searchStart = html.indexOf('<!-- Search and filters -->');
+    const searchEnd = html.indexOf('<!-- Error state -->');
+    const searchSection = html.slice(searchStart, searchEnd);
+    expect(hero).toContain('id="featured-video-player"');
+    expect(hero).toContain('controls playsinline preload="metadata"');
+    expect(hero).toContain('id="videos-heading"');
+    expect(hero).toContain('Video files');
+    expect(hero).toContain('id="video-playlist"');
+    expect(hero).toContain('max-h-[24rem]');
+    expect(hero).toContain('overflow-y-auto');
+    expect(hero).toContain('x-for="video in videos"');
+    expect(hero).toContain('@loadeddata="captureVideoThumbnail($event, video.id)"');
+    expect(hero).toContain('@click="selectFeaturedVideo(video)"');
+    expect(searchSection).not.toContain('id="featured-video-player"');
+    expect(searchSection).toContain('id="search-heading"');
+    expect(searchSection).toContain('Find a file');
+    expect(heroEnd).toBeLessThan(searchStart);
+    expect(searchStart).toBeLessThan(html.indexOf('class="library-heading'));
+    expect(html).not.toContain('Browse by subject');
+    expect(css).toContain('.video-playlist-scroll');
     expect(app).toContain('get latestVideo() { return this.videos[0] || null; }');
     expect(app).toContain('get videoArchive()');
     expect(app).toContain('return this.filteredVideos;');

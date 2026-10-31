@@ -138,6 +138,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monos
 .compact-header-menu__account { border-top: 1px solid #e2e8f0; margin-top: .25rem; padding: .75rem .25rem .125rem; }
 .site-main { width: 100%; min-width: 0; }
 .site-hero { isolation: isolate; }
+.video-playlist-scroll { scrollbar-width: thin; scrollbar-color: rgb(148 163 184 / 0.7) transparent; }
+.video-playlist-scroll::-webkit-scrollbar { width: .5rem; }
+.video-playlist-scroll::-webkit-scrollbar-track { background: transparent; }
+.video-playlist-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9999px; background: rgb(148 163 184 / 0.7); background-clip: padding-box; }
 .site-hero__stats > div { min-width: 0; }
 .library-filter-card, .library-filter-controls, .library-search-control,
 .library-select-controls, .library-sort-controls { min-width: 0; }
