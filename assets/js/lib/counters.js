@@ -55,17 +55,26 @@ export function downloadsFromRecord(record, path) {
   return safeCounterValue(record?.files?.get(key)?.downloads);
 }
 
-export function downloadCounterKey(path) {
+function fileCounterKey(prefix, path) {
   // FNV-1a produces a short, deterministic identifier while keeping the real
-  // file name out of the counter URL. Collisions are unlikely for a school
-  // library; include the final extension in the input to distinguish formats.
+  // file name out of the counter URL. Type prefixes keep downloads and video
+  // plays separate while the path identifies one published file.
   const input = String(path || '').normalize('NFC').toLowerCase();
   let hash = 0x811c9dc5;
   for (let index = 0; index < input.length; index += 1) {
     hash ^= input.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  return `download-${hash.toString(16).padStart(8, '0')}`;
+  return `${prefix}-${hash.toString(16).padStart(8, '0')}`;
+}
+
+export function downloadCounterKey(path) {
+  return fileCounterKey('download', path);
+}
+
+/** Shared Abacus key for play-starts on one published MP4. */
+export function videoWatchCounterKey(path) {
+  return fileCounterKey('watch', path);
 }
 
 /**

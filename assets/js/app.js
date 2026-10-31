@@ -3,7 +3,7 @@ import {
   SITE_CONFIG, SUBJECTS, YEAR_LEVELS,
   applyAdminGate, applyMasterGate, gateSignature, readAdminGate, readMasterGate
 } from './config.js';
-import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, writeLocalCounter } from './lib/counters.js';
+import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, videoWatchCounterKey, writeLocalCounter } from './lib/counters.js';
 import {
   clearTokenVaultOnGitHub, deleteResourceFromGitHub, mergeAdminActivityIntoGitHub,
   readCloudFileDetails, readPublicRepositoryFiles, readTokenVaultFromGitHub,
@@ -332,6 +332,7 @@ function schoolCloud() {
       visitors: 0,
       loadingVisitors: true,
       downloads: {},
+      videoViews: {},
       loadingDownloads: true,
       online: false,
       backend: 'local',
@@ -443,6 +444,9 @@ function schoolCloud() {
     _visitorSessionCounted: false,
     _visitorCountPromise: null,
     _downloadCountersOnline: false,
+    _watchCountersOnline: false,
+    _videoWatchReadStarted: [],
+    _videoWatchSessionCounted: [],
     _counterReadStarted: [],
     _counterReadInFlight: [],
     _counterReadAt: {},
@@ -1691,6 +1695,15 @@ function schoolCloud() {
           downloadsFromRecord(this.downloadStatsRecord, item.path)
         );
       }
+      window.__schoolCloudVideoWatchObserver?.disconnect();
+      this._videoWatchReadStarted = [];
+      for (const video of this.videos) {
+        video.watchCounterKey = videoWatchCounterKey(video.path);
+        this.stats.videoViews[video.id] = maxCounter(
+          this.stats.videoViews[video.id],
+          readLocalCounter(video.watchCounterKey)
+        );
+      }
       this.stats.loadingDownloads = false;
       this.updateCounterStatus();
       if (this.isAdmin && this.currentView === 'dashboard') this.loadDownloadCounters();
@@ -1729,6 +1742,78 @@ function schoolCloud() {
       // Older browsers without IntersectionObserver read a small first batch;
       // clicking any other file still increments that file's Abacus counter.
       if (this._counterReadStarted.length < 8) this.readDownloadCounter(item);
+    },
+
+    observeVideoWatchCounter(video, element) {
+      if (!video || !element) return;
+      video.watchCounterKey ||= videoWatchCounterKey(video.path);
+      if (this.stats.videoViews[video.id] === undefined) {
+        this.stats.videoViews[video.id] = readLocalCounter(video.watchCounterKey);
+      }
+      if (!this._counterClient || this._videoWatchReadStarted.includes(video.id)) return;
+
+      // Load shared watch totals only as video rows approach the viewport.
+      if (typeof window.IntersectionObserver === 'function') {
+        let observer = window.__schoolCloudVideoWatchObserver;
+        if (!observer) {
+          observer = new window.IntersectionObserver(entries => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              observer.unobserve(entry.target);
+              const state = entry.target._schoolCloudVideoWatchState;
+              const item = entry.target._schoolCloudVideoWatchItem;
+              if (state && item) state.readVideoWatchCounter(item);
+            }
+          }, { rootMargin: '120px 0px' });
+          window.__schoolCloudVideoWatchObserver = observer;
+        }
+        element._schoolCloudVideoWatchState = this;
+        element._schoolCloudVideoWatchItem = video;
+        observer.observe(element);
+        return;
+      }
+      this.readVideoWatchCounter(video);
+    },
+
+    async readVideoWatchCounter(video) {
+      if (!video || !this._counterClient || this._videoWatchReadStarted.includes(video.id)) return;
+      this._videoWatchReadStarted.push(video.id);
+      const key = video.watchCounterKey || videoWatchCounterKey(video.path);
+      video.watchCounterKey = key;
+      try {
+        const value = await this._counterClient.get(key);
+        this.stats.videoViews[video.id] = writeLocalCounter(key, maxCounter(this.videoViewsOf(video), value));
+        this._watchCountersOnline = true;
+        this.updateCounterStatus();
+      } catch {
+        this.stats.videoViews[video.id] = maxCounter(this.videoViewsOf(video), readLocalCounter(key));
+      }
+    },
+
+    countVideoWatch(video) {
+      if (!video?.id || fileExtension(video).toLowerCase() !== 'mp4') return false;
+      const key = video.watchCounterKey || videoWatchCounterKey(video.path);
+      video.watchCounterKey = key;
+      const sessionKey = `${SITE_CONFIG.abacus.namespace}:${key}`;
+      const claimed = claimSessionCounterHit(sessionKey);
+      if (claimed === false || (claimed === null && this._videoWatchSessionCounted.includes(key))) return false;
+      if (!this._videoWatchSessionCounted.includes(key)) this._videoWatchSessionCounted.push(key);
+
+      // Count one actual playback start per video per browser-tab session.
+      // Pausing, resuming, or selecting the same video again will not inflate it.
+      const localTotal = this.videoViewsOf(video) + 1;
+      this.stats.videoViews[video.id] = writeLocalCounter(key, localTotal);
+      if (this._counterClient) {
+        this._counterClient.hit(key).then(value => {
+          this.stats.videoViews[video.id] = writeLocalCounter(key, maxCounter(this.videoViewsOf(video), value));
+          this._watchCountersOnline = true;
+          this.updateCounterStatus();
+        }).catch(() => {
+          // Keep the local per-tab count if Abacus is temporarily unavailable.
+          this.updateCounterStatus();
+        });
+      }
+      return true;
     },
 
     async readDownloadCounter(item, force = false) {
@@ -1787,7 +1872,7 @@ function schoolCloud() {
 
     updateCounterStatus(downloadCountersOnline) {
       if (downloadCountersOnline !== undefined) this._downloadCountersOnline = Boolean(downloadCountersOnline);
-      this.stats.online = Boolean(this._visitorOnline || this._downloadCountersOnline) && Boolean(this._counterClient);
+      this.stats.online = Boolean(this._visitorOnline || this._downloadCountersOnline || this._watchCountersOnline) && Boolean(this._counterClient);
       // Three layers, best first: live Abacus totals shared across devices,
       // the last GitHub-saved record served from this same origin, and finally
       // per-browser fallback values.
@@ -2581,6 +2666,15 @@ function schoolCloud() {
 
     downloadsOf(item) { return Math.max(0, Number(this.stats.downloads[item?.id]) || 0); },
     downloadLabel(item) { return `Download count: ${formatCount(this.downloadsOf(item))}`; },
+    videoViewsOf(video) {
+      if (!video?.id) return 0;
+      const key = video.watchCounterKey || videoWatchCounterKey(video.path);
+      return maxCounter(this.stats.videoViews[video.id], readLocalCounter(key));
+    },
+    videoWatchLabel(video) {
+      const views = this.videoViewsOf(video);
+      return `${formatCount(views)} ${views === 1 ? 'watch' : 'watches'}`;
+    },
     isLatest(item) { return calculateAgeDays(item?.addedAt || item?.meta?.addedAt) < 1; },
     freshness(item) { return freshness(item); },
     isReviewDue(value) { return isReviewDue(value); },

@@ -151,6 +151,9 @@ describe('School Cloud release configuration', () => {
     expect(hero).toContain('overflow-y-auto');
     expect(hero).toContain('x-for="video in videos"');
     expect(hero).toContain('@loadeddata="captureVideoThumbnail($event, video.id)"');
+    expect(hero).toContain('@playing="countVideoWatch(featuredVideo)"');
+    expect(hero).toContain('x-init="observeVideoWatchCounter(video, $el)"');
+    expect(hero).toContain('videoWatchLabel(video)');
     expect(hero).toContain('@click="selectFeaturedVideo(video)"');
     expect(searchSection).not.toContain('id="featured-video-player"');
     expect(searchSection).toContain('id="search-heading"');
