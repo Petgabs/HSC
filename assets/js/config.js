@@ -51,6 +51,13 @@ export const SITE_CONFIG = Object.freeze({
     namespace: 'petgabs-hsc-schoolcloud',
     visitorKey: 'visitors'
   }),
+  // Public Supabase project details only. The service-role key stays inside
+  // the Edge Function environment and is never shipped to the browser.
+  studentVisits: Object.freeze({
+    supabaseUrl: 'https://ifnimguckfueeribokps.supabase.co',
+    publishableKey: 'sb_publishable_mqyVU4JTPyswiaHDPpiotg_49Y32WeT',
+    functionName: 'hsc-visitor-data'
+  }),
   maxUploadBytes: 50 * 1024 * 1024,
   // The cloud storage allowance the admin dashboard measures the published
   // files against. GitHub Pages serves a published site of up to 1 GB, and

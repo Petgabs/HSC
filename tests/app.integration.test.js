@@ -76,6 +76,14 @@ describe('School Cloud page integration', () => {
       }
       if (url.includes('/hit/')) return jsonResponse({ value: url.includes('download-') ? 8 : 41 });
       if (url.includes('/get/')) return jsonResponse({ value: url.includes('download-') ? 7 : 41 });
+      if (url.includes('/functions/v1/hsc-visitor-data')) {
+        const request = JSON.parse(init.body || '{}');
+        const summary = { active_users: 2, today_visitors: 4, total_visitors: 31, daily_visits: [{ day: new Date().toISOString().slice(0, 10), visits: 4 }] };
+        if (request.action === 'visit') return jsonResponse({ visit_id: '11111111-1111-4111-8111-111111111111', ...summary });
+        if (request.action === 'heartbeat' || request.action === 'public_stats') return jsonResponse(summary);
+        if (request.action === 'activity') return jsonResponse({ stored: true });
+        return jsonResponse({ visits: [], ...summary });
+      }
       return jsonResponse([]);
     });
     for (const [key, value] of Object.entries({
@@ -114,6 +122,15 @@ describe('School Cloud page integration', () => {
       expect(state.latestVideo.fileName).toBe('Calculus lesson.mp4');
       expect(state.featuredVideo.id).toBe(state.latestVideo.id);
       expect(state.videoArchive.map(video => video.fileName)).toEqual(['Calculus lesson.mp4', 'Quadratics lesson.mp4']);
+      expect(state.studentVisit.showPrompt).toBe(true);
+      state.studentVisit.name = 'Ada Lovelace';
+      state.studentVisit.className = '12A';
+      await state.submitStudentVisit();
+      expect(state.studentVisit.showPrompt).toBe(false);
+      expect(state.studentVisit.consented).toBe(true);
+      const visitPost = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/functions/v1/hsc-visitor-data') && JSON.parse(init.body).action === 'visit');
+      expect(JSON.parse(visitPost[1].body)).toMatchObject({ student_name: 'Ada Lovelace', class_name: '12A', consented: true });
+      expect(window.sessionStorage.getItem('schoolcloud.student-visit.v1')).not.toContain('Ada Lovelace');
       const watchKey = videoWatchCounterKey(state.latestVideo.path);
       const videoWatchHits = () => fetchMock.mock.calls.filter(([url]) => String(url).includes(`/hit/petgabs-hsc-schoolcloud/${watchKey}`));
       const player = window.document.getElementById('featured-video-player');
@@ -123,6 +140,14 @@ describe('School Cloud page integration', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
       expect(videoWatchHits()).toHaveLength(1);
       expect(state.videoViewsOf(state.latestVideo)).toBeGreaterThan(0);
+      const trackedActivityPosts = () => fetchMock.mock.calls
+        .filter(([url, init]) => String(url).includes('/functions/v1/hsc-visitor-data') && JSON.parse(init.body).action === 'activity')
+        .map(([, init]) => JSON.parse(init.body));
+      expect(trackedActivityPosts().some(event => event.activity_type === 'video_watch' && event.resource_title === state.latestVideo.name)).toBe(true);
+      const downloadable = state.apps.find(item => item.fileName === 'HSC revision.pdf');
+      state.trackStudentActivity('download', downloadable);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(trackedActivityPosts().some(event => event.activity_type === 'download' && event.resource_title === downloadable.name)).toBe(true);
       expect(state.facets.videos).toBe(2);
       state.filters.kind = 'video';
       expect(state.filteredVideos).toHaveLength(2);

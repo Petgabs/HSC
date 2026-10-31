@@ -10,11 +10,11 @@
  *   App shell                 -> stale-while-revalidate
  *   Library manifests/data    -> network-first, canonical cache key
  *   Published downloads       -> bounded cache-first with request coalescing
- *   Counters, GitHub API and  -> network only
+ *   Counters, visitor API, GitHub API and -> network only
  *   Legacy review data         -> network only
  * ------------------------------------------------------------------------- */
 
-const VERSION = 'v1.16.0';
+const VERSION = 'v1.17.0';
 const SHELL_CACHE = `schoolcloud-shell-${VERSION}`;
 const DATA_CACHE = `schoolcloud-data-${VERSION}`;
 const FILE_CACHE = `schoolcloud-files-${VERSION}`;
@@ -38,6 +38,7 @@ const SHELL_ASSETS = [
   './assets/js/lib/metadata.js',
   './assets/js/lib/search.js',
   './assets/js/lib/counters.js',
+  './assets/js/lib/studentVisitors.js',
   './assets/js/lib/adminActivity.js',
   './assets/js/lib/format.js',
   './assets/js/lib/preview.js',

@@ -4,6 +4,7 @@ import {
   applyAdminGate, applyMasterGate, gateSignature, readAdminGate, readMasterGate
 } from './config.js';
 import { AbacusCounters, claimSessionCounterHit, downloadCounterKey, downloadsFromRecord, maxCounter, normalizeStatsRecord, readLocalCounter, videoWatchCounterKey, writeLocalCounter } from './lib/counters.js';
+import { StudentVisitorClient } from './lib/studentVisitors.js';
 import {
   clearTokenVaultOnGitHub, deleteResourceFromGitHub, mergeAdminActivityIntoGitHub,
   readCloudFileDetails, readPublicRepositoryFiles, readTokenVaultFromGitHub,
@@ -66,6 +67,8 @@ const LIBRARY_CACHE_VERSION = 1;
 // accurate instantly, survive a reload, and hold entries that could not be
 // written yet (for example while the publishing token is still locked).
 const ADMIN_ACTIVITY_STORAGE_KEY = 'schoolcloud.admin.activity.v1';
+const STUDENT_VISIT_SESSION_KEY = 'schoolcloud.student-visit.v1';
+const STUDENT_VISITOR_HEARTBEAT_MS = 45_000;
 const ADMIN_ACTIVITY_PENDING_KEY = 'schoolcloud.admin.activity.pending.v1';
 // Upload dates resolved from GitHub's commit history are cached so the API is
 // asked once per file, not on every dashboard visit.
@@ -129,6 +132,16 @@ function safeStorageGet(storage, key) {
 
 function safeStorageSet(storage, key, value) {
   try { storage?.setItem(key, value); return true; } catch { return false; }
+}
+
+function createVisitorUuid() {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  } catch { /* Use a local fallback in restricted browser contexts. */ }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+    const random = Math.floor(Math.random() * 16);
+    return (character === 'x' ? random : ((random & 0x3) | 0x8)).toString(16);
+  });
 }
 
 function isTransientNetworkError(error) {
@@ -238,6 +251,18 @@ function buildCounterClient() {
   }
 }
 
+function buildStudentVisitorClient() {
+  try {
+    return new StudentVisitorClient({
+      baseUrl: SITE_CONFIG.studentVisits?.supabaseUrl,
+      publishableKey: SITE_CONFIG.studentVisits?.publishableKey,
+      functionName: SITE_CONFIG.studentVisits?.functionName || 'hsc-visitor-data'
+    });
+  } catch {
+    return null;
+  }
+}
+
 function calculateAgeDays(value) {
   const timestamp = Date.parse(value || '');
   return Number.isFinite(timestamp) ? Math.max(0, (Date.now() - timestamp) / 86_400_000) : Infinity;
@@ -338,6 +363,12 @@ function schoolCloud() {
       backend: 'local',
       updatedAtLabel: 'Not yet refreshed',
       recordUpdatedAt: ''
+    },
+    studentVisit: {
+      showPrompt: true, name: '', className: '', sessionId: '', visitId: '',
+      consented: false, saving: false, error: '', activeUsers: 0, todayVisitors: 0,
+      totalVisitors: 0, dailyVisits: [], visitors: [], loadingStats: true,
+      loadingAdmin: false, adminError: '', resetting: false
     },
     downloadStatsRecord: null,
     statsSyncing: false,
@@ -440,6 +471,9 @@ function schoolCloud() {
     toast: { message: '', tone: 'info', visible: false },
     _toastTimer: null,
     _counterClient: buildCounterClient(),
+    _studentVisitorClient: buildStudentVisitorClient(),
+    _studentVisitorHeartbeatTimer: null,
+    _studentVisitorStatsPromise: null,
     _visitorOnline: false,
     _visitorSessionCounted: false,
     _visitorCountPromise: null,
@@ -1015,16 +1049,23 @@ function schoolCloud() {
       window.addEventListener('orientationchange', refreshInterfaceMode, { passive: true });
       this.$watch('currentView', (view, previous) => {
         if (previous === 'settings' && view !== 'settings') this.lockAdminAccount();
+        if (view === 'dashboard' && this.isAdmin) this.loadVisitorRecords();
       });
       // Sign-ins recorded while the token was locked are shared the moment
       // publishing reconnects, on any path (remembered token, website vault or
       // a freshly pasted one).
       const sharePendingAdminActivity = () => this.syncAdminActivityToGitHub({ silent: true });
       this.$watch('githubAuth.connected', connected => {
-        if (connected) sharePendingAdminActivity();
+        if (connected) {
+          sharePendingAdminActivity();
+          if (this.currentView === 'dashboard' && this.isAdmin) this.loadVisitorRecords();
+        }
       });
       this.$watch('githubAuth.activeToken', token => {
-        if (token) sharePendingAdminActivity();
+        if (token) {
+          sharePendingAdminActivity();
+          if (this.currentView === 'dashboard' && this.isAdmin) this.loadVisitorRecords();
+        }
       });
       this.clearLegacyTokens();
       this.githubAuth.storeOnWebsite = this.readWebsiteTokenPreference();
@@ -1041,6 +1082,7 @@ function schoolCloud() {
       this.offline = !navigator.onLine;
       window.addEventListener('online', () => { this.offline = false; this.loadLibrary(); });
       window.addEventListener('offline', () => { this.offline = true; });
+      this.initStudentVisitTracking();
       this.readSharedFilters();
       // Sign-ins and uploads recorded on this device load before the library,
       // so the dashboard has numbers the moment it opens.
@@ -1055,6 +1097,189 @@ function schoolCloud() {
       this.refreshRateLimitState();
       if (Object.keys(this.rateLimit.blocked).length) this.startRateLimitTicker();
       this.refreshIcons();
+    },
+
+    visitorSessionStorage() {
+      try { return globalThis.sessionStorage; } catch { return null; }
+    },
+    persistStudentVisitSession(completed = true) {
+      const storage = this.visitorSessionStorage();
+      if (!this.studentVisit.sessionId) return false;
+      return safeStorageSet(storage, STUDENT_VISIT_SESSION_KEY, JSON.stringify({
+        version: 1,
+        sessionId: this.studentVisit.sessionId,
+        visitId: this.studentVisit.visitId || '',
+        consented: Boolean(this.studentVisit.consented),
+        completed: Boolean(completed)
+      }));
+    },
+    initStudentVisitTracking() {
+      const storage = this.visitorSessionStorage();
+      let saved = null;
+      try { saved = JSON.parse(safeStorageGet(storage, STUDENT_VISIT_SESSION_KEY) || 'null'); } catch { saved = null; }
+      if (saved && /^[0-9a-f-]{36}$/i.test(saved.sessionId || '')) {
+        this.studentVisit.sessionId = saved.sessionId;
+        if (saved.completed) {
+          this.studentVisit.visitId = saved.visitId || '';
+          this.studentVisit.consented = saved.consented === true && Boolean(saved.visitId);
+          this.studentVisit.showPrompt = false;
+        }
+      } else {
+        this.studentVisit.sessionId = createVisitorUuid();
+        this.persistStudentVisitSession(false);
+      }
+      this.heartbeatStudentSession();
+      if (!this._studentVisitorHeartbeatTimer) {
+        this._studentVisitorHeartbeatTimer = window.setInterval(() => this.heartbeatStudentSession(), STUDENT_VISITOR_HEARTBEAT_MS);
+        this._studentVisitorHeartbeatTimer?.unref?.();
+      }
+    },
+    applyStudentVisitorStats(stats = {}) {
+      this.studentVisit.activeUsers = Math.max(0, Number(stats.active_users) || 0);
+      this.studentVisit.todayVisitors = Math.max(0, Number(stats.today_visitors) || 0);
+      this.studentVisit.totalVisitors = Math.max(0, Number(stats.total_visitors) || 0);
+      this.studentVisit.dailyVisits = Array.isArray(stats.daily_visits) ? stats.daily_visits : [];
+      this.studentVisit.loadingStats = false;
+    },
+    async refreshStudentVisitorStats() {
+      if (!this._studentVisitorClient) {
+        this.studentVisit.loadingStats = false;
+        return;
+      }
+      if (this._studentVisitorStatsPromise) return this._studentVisitorStatsPromise;
+      this.studentVisit.loadingStats = true;
+      const promise = this._studentVisitorClient.request('public_stats')
+        .then(stats => this.applyStudentVisitorStats(stats))
+        .catch(() => { this.studentVisit.loadingStats = false; })
+        .finally(() => {
+          if (this._studentVisitorStatsPromise === promise) this._studentVisitorStatsPromise = null;
+        });
+      this._studentVisitorStatsPromise = promise;
+      return promise;
+    },
+    async heartbeatStudentSession() {
+      if (!this._studentVisitorClient || !this.studentVisit.sessionId) return this.refreshStudentVisitorStats();
+      try {
+        const stats = await this._studentVisitorClient.request('heartbeat', { session_id: this.studentVisit.sessionId });
+        this.applyStudentVisitorStats(stats);
+      } catch {
+        if (!this.studentVisit.dailyVisits.length) this.studentVisit.loadingStats = false;
+      }
+    },
+    async saveStudentVisit(consented) {
+      if (this.studentVisit.saving) return;
+      const name = String(this.studentVisit.name || '').trim();
+      const className = String(this.studentVisit.className || '').trim();
+      if (consented && (!name || !className)) {
+        this.studentVisit.error = 'Please enter your English name and class, or choose Skip.';
+        return;
+      }
+      this.studentVisit.saving = true;
+      this.studentVisit.error = '';
+      try {
+        if (!this._studentVisitorClient) throw new Error('The visitor service is not available right now.');
+        const result = await this._studentVisitorClient.request('visit', {
+          session_id: this.studentVisit.sessionId,
+          consented,
+          ...(consented ? { student_name: name, class_name: className } : {})
+        });
+        if (!result.visit_id) throw new Error('The visit was not confirmed by the visitor service.');
+        this.studentVisit.visitId = result.visit_id;
+        this.studentVisit.consented = consented;
+        this.studentVisit.showPrompt = false;
+        this.persistStudentVisitSession(true);
+        this.applyStudentVisitorStats(result);
+      } catch (error) {
+        this.studentVisit.error = error?.message || 'The visit could not be recorded. Please try again or choose Skip.';
+        if (!consented) {
+          // Never prevent access to learning materials when analytics is offline.
+          this.studentVisit.consented = false;
+          this.studentVisit.visitId = '';
+          this.studentVisit.showPrompt = false;
+          this.persistStudentVisitSession(true);
+          this.notify('Could not save the anonymous visit right now; you can still continue.', 'error');
+        }
+      } finally {
+        this.studentVisit.saving = false;
+      }
+    },
+    submitStudentVisit() { return this.saveStudentVisit(true); },
+    skipStudentVisit() { return this.saveStudentVisit(false); },
+    trackStudentActivity(activityType, item) {
+      const visit = this.studentVisit;
+      if (!visit.consented || !visit.visitId || !visit.sessionId || !this._studentVisitorClient || !item) return;
+      const path = String(item.path || item.fileName || '').slice(0, 500);
+      const title = String(item.name || item.fileName || path).slice(0, 200);
+      const resourceId = String(item.id || path).slice(0, 240);
+      if (!path || !title || !resourceId) return;
+      this._studentVisitorClient.request('activity', {
+        session_id: visit.sessionId,
+        visit_id: visit.visitId,
+        event_id: createVisitorUuid(),
+        activity_type: activityType,
+        resource_id: resourceId,
+        resource_title: title,
+        resource_path: path
+      }).catch(() => {});
+    },
+    async loadVisitorRecords() {
+      if (!this.isAdmin || this.currentView !== 'dashboard' || this.studentVisit.loadingAdmin) return;
+      if (!this._studentVisitorClient) {
+        this.studentVisit.adminError = 'The visitor service is not configured.';
+        return;
+      }
+      const token = String(this.githubAuth.activeToken || '').trim();
+      if (!token) {
+        this.studentVisit.adminError = 'Connect a repository-write GitHub token in Settings to view identifiable visitor records.';
+        this.studentVisit.visitors = [];
+        return;
+      }
+      this.studentVisit.loadingAdmin = true;
+      this.studentVisit.adminError = '';
+      try {
+        const result = await this._studentVisitorClient.request('admin_list', { github_token: token });
+        this.applyStudentVisitorStats(result);
+        this.studentVisit.visitors = Array.isArray(result.visits) ? result.visits : [];
+      } catch (error) {
+        this.studentVisit.adminError = error?.message || 'Could not load visitor records.';
+      } finally {
+        this.studentVisit.loadingAdmin = false;
+        this.refreshIcons();
+      }
+    },
+    async resetVisitorRecords() {
+      if (!this.isAdmin) return;
+      if (!this.githubAuth.activeToken) {
+        this.studentVisit.adminError = 'Connect a repository-write GitHub token in Settings before resetting visitor records.';
+        return;
+      }
+      if (!window.confirm('Permanently delete all student visitor names, class details, linked activities, daily totals, and active-session records? This cannot be undone. The existing Abacus site/resource counters are separate and will not change.')) return;
+      this.studentVisit.resetting = true;
+      this.studentVisit.adminError = '';
+      try {
+        const result = await this._studentVisitorClient.request('admin_reset', { github_token: this.githubAuth.activeToken });
+        this.studentVisit.visitors = [];
+        this.applyStudentVisitorStats(result);
+        this.notify('Visitor records and daily totals have been reset.', 'success');
+      } catch (error) {
+        this.studentVisit.adminError = error?.message || 'Visitor records could not be reset.';
+      } finally {
+        this.studentVisit.resetting = false;
+      }
+    },
+    get studentVisitorDailySeries() {
+      const counts = new Map(this.studentVisit.dailyVisits.map(entry => [String(entry.day), Number(entry.visits) || 0]));
+      return Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(Date.now() - (6 - index) * 86_400_000).toISOString().slice(0, 10);
+        return { day: date, visits: counts.get(date) || 0 };
+      });
+    },
+    get studentVisitorDailyMax() {
+      return this.studentVisitorDailySeries.reduce((max, entry) => Math.max(max, entry.visits), 0);
+    },
+    studentVisitorBarHeight(entry) {
+      const max = this.studentVisitorDailyMax;
+      return max ? Math.max(6, Math.round((Number(entry?.visits) || 0) / max * 100)) : 6;
     },
 
     clearLegacyTokens() {
@@ -1803,6 +2028,7 @@ function schoolCloud() {
       // Pausing, resuming, or selecting the same video again will not inflate it.
       const localTotal = this.videoViewsOf(video) + 1;
       this.stats.videoViews[video.id] = writeLocalCounter(key, localTotal);
+      this.trackStudentActivity('video_watch', video);
       if (this._counterClient) {
         this._counterClient.hit(key).then(value => {
           this.stats.videoViews[video.id] = writeLocalCounter(key, maxCounter(this.videoViewsOf(video), value));
@@ -2270,6 +2496,7 @@ function schoolCloud() {
     openDashboard() {
       if (!this.isAdmin) return;
       this.currentView = 'dashboard';
+      this.loadVisitorRecords();
       this.refreshIcons();
       // The dashboard is a reporting view: refresh stale per-file values from
       // Abacus instead of only loading counters not seen on the student page.
@@ -2530,6 +2757,7 @@ function schoolCloud() {
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
+      this.trackStudentActivity('download', item);
       this.notify(`Download started successfully for “${item.name}”.`, 'success');
 
       // Do not block the student's download on analytics. Abacus is contacted
