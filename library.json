@@ -555,5 +555,23 @@
     "addedAt": "2026-10-31T07:51:30.155Z",
     "sha256": "703016fe7f000cb4b0d50a59d3a74ef3c35f1aeeefdac7146ca701dcf1f33e60",
     "bytes": 23914678
+  },
+  "apps/Q38-53_Solutions.mp4": {
+    "title": "Sequence and Series Q38-53 Solutions",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T08:40:17.107Z",
+    "sha256": "d14d83455ace5b1bde14d922cf323530040b29f84d5021531a5c2e04428cdf2d",
+    "bytes": 24983506
   }
 }
