@@ -11,12 +11,12 @@ the GitHub repository; GitHub Pages then makes them available to students.
 
 - Keeps the existing student library, resource cards, search, subject/year
   filters, previews, download links, dashboard, resource statistics and offline
-  support. The library features the newest MP4 in a built-in player and lists
-  all videos, including the newest, in a separate thumbnail gallery directly
-  below the featured player. Mini Apps follow the video gallery, then Documents
-  & Resources; both card groups use compact 16:9 previews sized like video
-  thumbnails. Video thumbnail stills are generated in the browser from each
-  video's frame.
+  support. The student dashboard features an MP4 player beside a vertically
+  scrollable **Video files** playlist; selecting a thumbnail loads that video
+  into the player. Search controls sit directly below the dashboard, followed
+  by Mini Apps and Documents & Resources. Both resource card groups use compact
+  16:9 previews sized like video thumbnails, and video thumbnail stills are
+  generated in the browser from each video's frame.
 - Removes the separate teacher login and teacher credential management. The
   website has one administrator sign-in; admin uploads publish directly rather
   than entering a teacher review queue. The legacy **Review Submissions**
