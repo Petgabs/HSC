@@ -537,5 +537,23 @@
     "addedAt": "2026-10-31T06:49:10.903Z",
     "sha256": "1783b78249be68ecac52cc66aa4ba0114c339c06b94d86e3430cfe53dff5b88a",
     "bytes": 23465729
+  },
+  "apps/Q22-37_Solutions.mp4": {
+    "title": "Series and Sequence Q22-37 Solutions",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T07:51:30.155Z",
+    "sha256": "703016fe7f000cb4b0d50a59d3a74ef3c35f1aeeefdac7146ca701dcf1f33e60",
+    "bytes": 23914678
   }
 }
