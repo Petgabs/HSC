@@ -358,5 +358,22 @@
     "addedAt": "2026-10-30T17:09:37.182Z",
     "sha256": "ccdd0c0206c232011548afa171da707007e6372431017d45d5cf4adc9e7e8014",
     "bytes": 18395714
+  },
+  "apps/Compound_Interest_GP_HSC.mp4": {
+    "title": "Compound Interest GP HSC",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T01:57:33.567Z",
+    "sha256": "9859a067a589dac0e718a47e88f3858882c4943b5e1a61ee148b142c6b165da4",
+    "bytes": 19301824
   }
 }
