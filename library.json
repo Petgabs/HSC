@@ -343,5 +343,22 @@
     "addedAt": "2026-10-31T01:57:33.567Z",
     "sha256": "9859a067a589dac0e718a47e88f3858882c4943b5e1a61ee148b142c6b165da4",
     "bytes": 19301824
+  },
+  "apps/AP_vs_GP_Comparison_and_HSC_Practice_Teacher_Copy.pdf": {
+    "title": "AP vs GP Comparison and HSC Practice Questions",
+    "subject": "Mathematics",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T02:30:28.284Z",
+    "sha256": "caf1de72d4bc9e01bdd7e2a00b03f05cbd14aecfcaf2986793461aa90920739e",
+    "bytes": 224788
   }
 }
