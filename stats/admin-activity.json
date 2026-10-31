@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T07:48:01.470Z",
+  "updatedAt": "2026-10-31T07:52:25.123Z",
   "logins": [
     {
       "at": "2026-10-31T07:48:01.469Z",
@@ -149,6 +149,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T07:52:25.121Z",
+      "path": "apps/Q22-37_Solutions.mp4",
+      "name": "Q22-37_Solutions.mp4",
+      "title": "Series and Sequence Q22-37 Solutions",
+      "bytes": 23914678,
+      "subject": "MAD",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T06:49:51.364Z",
       "path": "apps/Sequences_Series_21_MCQs_Solutions.mp4",
