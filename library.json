@@ -591,5 +591,23 @@
     "addedAt": "2026-10-31T10:31:41.414Z",
     "sha256": "f8cb4a2e3640d3c78b90573f83c8c401c8dad46706fb926fe08269e80698ebfe",
     "bytes": 15805926
+  },
+  "apps/Q67-79_Solutions.mp4": {
+    "title": "Sequence and Series Q67-79 Solutions",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T10:46:57.908Z",
+    "sha256": "f4b8f4af5ce2df58008ab6cfdc2e624fda5e9504fd29c8a80d9c490feb868a53",
+    "bytes": 17150195
   }
 }
