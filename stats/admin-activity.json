@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T02:37:17.196Z",
+  "updatedAt": "2026-10-31T02:39:08.022Z",
   "logins": [
     {
       "at": "2026-10-31T02:37:17.195Z",
@@ -117,6 +117,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T02:39:08.021Z",
+      "path": "apps/Applications of AP and GP - Teacher Teaching Guide.pdf",
+      "name": "Applications of AP and GP - Teacher Teaching Guide.pdf",
+      "title": "Applications of AP and GP Examples",
+      "bytes": 237506,
+      "subject": "Mathematics",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T02:37:04.004Z",
       "path": "apps/Application of AP and GP - NESA Marking Guidelines and Solutions (1).pdf",
