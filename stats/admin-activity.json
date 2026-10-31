@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-10-31T06:48:14.305Z",
+  "updatedAt": "2026-10-31T06:49:51.365Z",
   "logins": [
     {
       "at": "2026-10-31T06:48:14.303Z",
@@ -145,6 +145,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-10-31T06:49:51.364Z",
+      "path": "apps/Sequences_Series_21_MCQs_Solutions.mp4",
+      "name": "Sequences_Series_21_MCQs_Solutions.mp4",
+      "title": "Sequences Series 21 MCQs Solutions",
+      "bytes": 23465729,
+      "subject": "MAD",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T05:58:17.441Z",
       "path": "apps/Chapter_1_Quiz_Chinese_Subtitles.mp4",
