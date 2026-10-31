@@ -573,5 +573,23 @@
     "addedAt": "2026-10-31T08:40:17.107Z",
     "sha256": "d14d83455ace5b1bde14d922cf323530040b29f84d5021531a5c2e04428cdf2d",
     "bytes": 24983506
+  },
+  "apps/Q54-66_Solutions.mp4": {
+    "title": "Sequence and Series Q54-66 Solutions",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-10-31T10:31:41.414Z",
+    "sha256": "f8cb4a2e3640d3c78b90573f83c8c401c8dad46706fb926fe08269e80698ebfe",
+    "bytes": 15805926
   }
 }
