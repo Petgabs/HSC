@@ -627,5 +627,23 @@
     "addedAt": "2026-11-05T04:35:36.353Z",
     "sha256": "4f5640df92059219d49c66ab6f95608467c7df3718d375ed472cd58ee2346d03",
     "bytes": 14848062
+  },
+  "apps/Finance_Arithmetic_and_Geometric_Sequences_HSC_Bilingual_Revised.mp4": {
+    "title": "Finance Arithmetic and Geometric Sequences - Introduction",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-11-05T04:43:46.535Z",
+    "sha256": "22e4f2c394de9307231051c56135934af1c4de6aac9ca8a202c32e54c1ecf45c",
+    "bytes": 17372156
   }
 }
