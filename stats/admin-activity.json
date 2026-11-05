@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-11-05T04:32:05.705Z",
+  "updatedAt": "2026-11-05T04:36:39.806Z",
   "logins": [
     {
       "at": "2026-11-05T04:32:05.704Z",
@@ -185,6 +185,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-11-05T04:36:39.801Z",
+      "path": "apps/HSC_Interest_Practice_Male_AI_Teacher.mp4",
+      "name": "HSC_Interest_Practice_Male_AI_Teacher.mp4",
+      "title": "Simple Interest and Compound Interest practice questions",
+      "bytes": 14848062,
+      "subject": "MAD",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-10-31T10:47:41.180Z",
       "path": "apps/Q67-79_Solutions.mp4",
