@@ -681,5 +681,23 @@
     "addedAt": "2026-11-06T14:39:30.494Z",
     "sha256": "a03abb592807b857b71560d94ccf67b9ae1cc7e8aae90b95c53edc1d2586ca60",
     "bytes": 10610543
+  },
+  "apps/HSC_Annuities_Instalments_Intro_Lesson.mp4": {
+    "title": "HSC Annuities and Instalments Introduction lesson",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-11-06T15:43:53.241Z",
+    "sha256": "d2fd9a3b6940b2e912e8c76e49300c41eaafd0f5eda0f934e266dd5d84bef250",
+    "bytes": 10281221
   }
 }
