@@ -9,7 +9,7 @@
     "double-count a sign-in or an upload. No device, network or personal data is",
     "stored here; the username is already public in assets/js/config.js."
   ],
-  "updatedAt": "2026-11-06T13:55:15.553Z",
+  "updatedAt": "2026-11-06T14:39:58.518Z",
   "logins": [
     {
       "at": "2026-11-06T13:53:26.124Z",
@@ -209,6 +209,18 @@
     }
   ],
   "uploads": [
+    {
+      "at": "2026-11-06T14:39:58.517Z",
+      "path": "apps/Simple_Interest_Read_Question_Pause_Solution.mp4",
+      "name": "Simple_Interest_Read_Question_Pause_Solution.mp4",
+      "title": "Simple Interest",
+      "bytes": 10610543,
+      "subject": "MAD",
+      "years": [
+        12
+      ],
+      "owner": "Peter"
+    },
     {
       "at": "2026-11-06T13:55:15.551Z",
       "path": "apps/Compound_Interest_Practice_Animated_Solutions.mp4",
