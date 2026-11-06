@@ -663,5 +663,23 @@
     "addedAt": "2026-11-06T13:54:38.425Z",
     "sha256": "521e50fdd8a8123015c2a9c502ec692474b97e3de68c389c95802cf40e251e04",
     "bytes": 7763428
+  },
+  "apps/Simple_Interest_Read_Question_Pause_Solution.mp4": {
+    "title": "Simple Interest",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-11-06T14:39:30.494Z",
+    "sha256": "a03abb592807b857b71560d94ccf67b9ae1cc7e8aae90b95c53edc1d2586ca60",
+    "bytes": 10610543
   }
 }
