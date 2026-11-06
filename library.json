@@ -645,5 +645,23 @@
     "addedAt": "2026-11-05T04:43:46.535Z",
     "sha256": "22e4f2c394de9307231051c56135934af1c4de6aac9ca8a202c32e54c1ecf45c",
     "bytes": 17372156
+  },
+  "apps/Compound_Interest_Practice_Animated_Solutions.mp4": {
+    "title": "Compound Interest",
+    "subject": "MAD",
+    "years": [
+      12
+    ],
+    "tags": [],
+    "keywords": [],
+    "language": "English",
+    "owner": "Peter",
+    "department": "Mathematics",
+    "academicYear": "2026",
+    "visibility": "public",
+    "version": "1.0",
+    "addedAt": "2026-11-06T13:54:38.425Z",
+    "sha256": "521e50fdd8a8123015c2a9c502ec692474b97e3de68c389c95802cf40e251e04",
+    "bytes": 7763428
   }
 }
